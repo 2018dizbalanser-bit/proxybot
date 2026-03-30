@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import BigInteger, String, Boolean, DateTime, Float
+from sqlalchemy import BigInteger, String, Boolean, DateTime, Float, ForeignKey, Integer
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.ext.asyncio import AsyncAttrs
 
@@ -27,13 +27,46 @@ class Channel(Base):
 class Proxy(Base):
     __tablename__ = 'proxies'
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     url: Mapped[str] = mapped_column(String(255), unique=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    # Новые метрики
-    score: Mapped[float] = mapped_column(Float, default=9999.0)  # Чем меньше, тем лучше
-    success_checks: Mapped[int] = mapped_column(default=0)  # Успешные пинги
-    total_checks: Mapped[int] = mapped_column(default=0)  # Всего пингов
+    # 1. Привязка к владельцу (кто добавил прокси)
+    owner_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('users.tg_id', ondelete='SET NULL'),
+                                                 nullable=True)
+
+    # 2. Обычные голоса (для отображения на кнопках)
+    likes: Mapped[int] = mapped_column(Integer, default=0)
+    dislikes: Mapped[int] = mapped_column(Integer, default=0)
+
+    # 3. Premium голоса (для реального влияния на рейтинг)
+    premium_likes: Mapped[int] = mapped_column(Integer, default=0)
+    premium_dislikes: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Твои метрики (оставляем как есть)
+    score: Mapped[float] = mapped_column(Float, default=9999.0)
+    success_checks: Mapped[int] = mapped_column(Integer, default=0)
+    total_checks: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # НОВЫЕ ПОЛЯ ДЛЯ СПОНСОРА
+    sponsor_channel_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    sponsor_channel_url: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    sponsor_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+# 4. Новая таблица для хранения голосов пользователей
+class Vote(Base):
+    __tablename__ = 'votes'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('users.tg_id', ondelete='CASCADE'))
+    proxy_id: Mapped[int] = mapped_column(Integer, ForeignKey('proxies.id', ondelete='CASCADE'))
+
+    # Каким был голос? True = лайк, False = дизлайк
+    is_upvote: Mapped[bool] = mapped_column(Boolean)
+
+    # Был ли у юзера Премиум в момент голосования?
+    is_premium: Mapped[bool] = mapped_column(Boolean, default=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

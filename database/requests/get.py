@@ -97,3 +97,19 @@ async def get_detailed_stats():
             "week": new_week or 0,
             "month": new_month or 0
         }
+
+
+async def get_proxy_by_id(proxy_id: int):
+    async with async_session() as session:
+        return await session.get(Proxy, proxy_id)
+
+
+
+# Замени get_user_proxy на эту функцию
+async def get_user_proxies(user_id: int):
+    async with async_session() as session:
+        # Убрали .limit(1), теперь получаем все прокси пользователя
+        result = await session.execute(
+            select(Proxy).where(Proxy.owner_id == user_id)
+        )
+        return result.scalars().all()

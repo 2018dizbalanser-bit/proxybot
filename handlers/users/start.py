@@ -1,29 +1,44 @@
 from aiogram import Router, types
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, CommandObject
 
 from database.requests.add import add_user
 from keyboards.reply import main_keyboard
 
+# Импортируем функцию выдачи конкретного прокси (мы её напишем в Шаге 3)
+from handlers.users.proxy import send_specific_proxy
+
 router = Router()
 
 @router.message(CommandStart())
-async def start_command(message: types.Message):
-    # Добавляем или обновляем пользователя в БД
+async def start_command(message: types.Message, command: CommandObject, bot: Bot):
+    # Добавляем пользователя в БД
     await add_user(
         tg_id=message.from_user.id,
         username=message.from_user.username
     )
 
-    # Адаптированный текст в стиле твоего примера
+    args = command.args
+
+    if args and args.startswith("prx_"):
+        try:
+            proxy_id = int(args.split("_")[1])
+            # Передаем bot сюда!
+            await send_specific_proxy(message, proxy_id, bot)
+            return
+        except ValueError:
+            pass
+
+
+    # Если это обычный старт (без реферальной ссылки)
     text = (
         f"<b>Привет, {message.from_user.first_name}!</b> 👋\n\n"
-        f"Я бот для раздачи <b>бесплатных и скоростных</b> прокси для Telegram.\n"
-        f"С моей помощью твой мессенджер будет летать даже при сбоях сети. 🚀\n\n"
-        f"🔐 <b>Что я умею:</b>\n"
-        f"1️⃣ Выдаю только актуальные и проверенные прокси.\n"
-        f"2️⃣ Автоматически подбираю самый быстрый сервер под твой регион.\n"
-        f"3️⃣ Если прокси станет нестабильным — я мгновенно предложу замену.\n\n"
-        f"👇 <b>Нажми на кнопку ниже</b>, чтобы получить свой первый доступ прямо сейчас!"
+        f"Я — умный каталог <b>MTProto-прокси</b>. Выдаю сервера, которые не тормозят!\n\n"
+        f"⚡️ <b>Что я умею:</b>\n"
+        f"• <b>Честный рейтинг:</b> топ формируют лайки (👍/👎) пользователей.\n"
+        f"• <b>Никаких лагов:</b> регулярно проверяю пинг всех прокси в системе.\n"
+        f"• <b>Продвижение:</b> добавь свой прокси в личном кабинете "
+        f"и бесплатно получай подписчиков на свой спонсорский канал!\n\n"
+        f"👇 <b>Нажимай кнопку в меню, чтобы начать:</b>"
     )
 
     await message.answer(

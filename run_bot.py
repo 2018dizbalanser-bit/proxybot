@@ -4,7 +4,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 
 from data.config import BOT_TOKEN
-from database.connect import create_tables
+# from database.connect import create_tables
 
 # Позже мы раскомментируем эти импорты, когда напишем роутеры
 from handlers.users import setup_users_routers
@@ -14,8 +14,8 @@ from utils.worker import background_proxy_checker
 
 async def main():
     # Создаем таблицы в БД при запуске
-    await create_tables()
-    print("База данных подключена и таблицы созданы.")
+    # await create_tables()
+    # print("База данных подключена и таблицы созданы.")
 
     # Инициализируем бота и диспетчер
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode='html'))
