@@ -24,3 +24,28 @@ def get_public_proxy_text(proxy: Proxy, bot_username: str) -> str:
         f"<code>{share_link}</code>\n\n"
         f"<i>Оцени сервер! Если он начнет тормозить, жми «Другой прокси».</i>"
     )
+
+
+def get_proxy_card_text(proxy: Proxy, bot_username: str, is_direct_link: bool = False) -> str:
+    uptime = 100
+    if proxy.total_checks > 0:
+        uptime = round((proxy.success_checks / proxy.total_checks) * 100, 1)
+
+    host, port = parse_proxy_url(proxy.url)
+    display_host = host if host else "Скрытый адрес"
+    share_link = f"https://t.me/{bot_username}?start=prx_{proxy.id}"
+
+    text = (
+        f"⚡️ <b>Прокси #{proxy.id}</b> | <code>{display_host}</code>\n\n"
+        f"Нажмите «Подключиться», чтобы добавить его в Telegram.\n\n"
+        f"🟢 Стабильность: <b>{uptime}%</b>\n"
+        f"📊 Рейтинг пользователей: 👍 {proxy.likes} / 👎 {proxy.dislikes}\n\n"
+        f"🔗 <b>Поделись этим прокси с друзьями:</b>\n"
+        f"<code>{share_link}</code>\n\n"
+    )
+
+    # Если это общая выдача - добавляем призыв жать кнопку. Если рефка - ничего не пишем.
+    if not is_direct_link:
+        text += f"<i>Оцени сервер! Если он начнет тормозить, жми «Другой прокси».</i>"
+
+    return text

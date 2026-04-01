@@ -22,9 +22,8 @@ async def get_all_proxies():
 
 async def get_best_proxy(exclude_id: int = None):
     async with async_session() as session:
-        query = select(Proxy).where(Proxy.is_active == True)
+        query = select(Proxy).where(Proxy.is_active == True, Proxy.is_public == True)
 
-        # Если юзер просит замену, исключаем его текущий прокси из поиска
         if exclude_id is not None:
             query = query.where(Proxy.id != exclude_id)
 
@@ -113,3 +112,11 @@ async def get_user_proxies(user_id: int):
             select(Proxy).where(Proxy.owner_id == user_id)
         )
         return result.scalars().all()
+
+
+
+# Не забудь убедиться, что select импортирован (from sqlalchemy import select)
+async def get_user(tg_id: int):
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.tg_id == tg_id))
+        return result.scalar_one_or_none()

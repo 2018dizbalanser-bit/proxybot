@@ -1,27 +1,17 @@
 import asyncio
 from datetime import datetime
-
-from aiogram import Bot, types
+from aiogram import Bot
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from sqlalchemy import select
+from aiogram import types
 
 from database.connect import async_session
 from database.models import Proxy
-from utils.ping import ping_proxy
-from data.config import ADMIN_IDS
+from sqlalchemy import select
+from utils.ping import ping_proxy, parse_proxy_url
 
 
-async def notify_admins(bot: Bot, text: str):
-    """Рассылает экстренное сообщение всем админам из конфига"""
-    for admin_id in ADMIN_IDS:
-        try:
-            await bot.send_message(chat_id=admin_id, text=text, disable_web_page_preview=True)
-        except Exception:
-            pass  # Админ мог заблокировать бота, игнорируем
-
-
+# Оставляем функцию уведомлений
 async def notify_owner(bot: Bot, owner_id: int | None, text: str, reply_markup=None):
-    """Отправляет уведомление владельцу прокси"""
     if not owner_id:
         return
     try:
@@ -32,111 +22,122 @@ async def notify_owner(bot: Bot, owner_id: int | None, text: str, reply_markup=N
             disable_web_page_preview=True
         )
     except Exception:
-        pass  # Владелец мог заблокировать бота
+        pass
 
 
+# --- НОВАЯ ОПТИМИЗИРОВАННАЯ ФУНКЦИЯ ПИНГА ДЛЯ ОДНОГО ПРОКСИ ---
+async def _ping_task(proxy_id: int, host: str, port: int, semaphore: asyncio.Semaphore):
+    """Выполняет пинг с ограничением одновременных подключений (семафором)"""
+    async with semaphore:
+        is_alive, resp_time = await ping_proxy(host, port)
+        return proxy_id, is_alive, resp_time
+
+
+# --- ГЛАВНЫЙ ВОРКЕР ---
 async def background_proxy_checker(bot: Bot):
-    """Фоновая задача для проверки всех прокси каждые 3 минуты с алертами"""
+    """Фоновый воркер для проверки прокси-серверов (High-Performance)"""
+
+    # Храним страйки в оперативной памяти
+    proxy_strikes = {}
+
+    # Ограничиваем одновременные пинги до 50 штук.
+    # Это спасет твой 1-ядерный сервер от перегрузки по сокетам.
+    concurrency_limit = 50
+    semaphore = asyncio.Semaphore(concurrency_limit)
+
     while True:
-        async with async_session() as session:
-            result = await session.scalars(select(Proxy))
-            proxies = result.all()
+        try:
+            async with async_session() as session:
+                result = await session.execute(select(Proxy))
+                proxies = result.scalars().all()
 
-            for proxy in proxies:
-                # --- НОВЫЙ БЛОК: ПРОВЕРКА ИСТЕЧЕНИЯ СПОНСОРА ---
-                if proxy.sponsor_until and proxy.sponsor_until < datetime.utcnow():
-                    # Сохраняем ID перед очисткой
-                    proxy_id = proxy.id
-                    owner_id = proxy.owner_id
+                # 1. Быстрая синхронная проверка спонсоров
+                for proxy in proxies:
+                    if proxy.sponsor_until and proxy.sponsor_until < datetime.utcnow():
+                        proxy_id = proxy.id
+                        owner_id = proxy.owner_id
 
-                    # 1. Очищаем спонсора в БД
-                    proxy.sponsor_channel_id = None
-                    proxy.sponsor_channel_url = None
-                    proxy.sponsor_until = None
+                        proxy.sponsor_channel_id = None
+                        proxy.sponsor_channel_url = None
+                        proxy.sponsor_until = None
 
-                    # 2. Отправляем уведомление с кнопкой
-                    if owner_id:
-                        markup = InlineKeyboardBuilder().row(
-                            types.InlineKeyboardButton(
-                                text="📢 Продлить спонсора (50 ⭐️)",
-                                callback_data=f"buy_sponsor_{proxy_id}"
+                        if owner_id:
+                            markup = InlineKeyboardBuilder().row(
+                                types.InlineKeyboardButton(
+                                    text="📢 Продлить ОП",
+                                    callback_data=f"sponsor_menu_{proxy_id}"  # Изменили тут!
+                                )
+                            ).as_markup()
+
+                            text = (
+                                f"🔔 <b>Срок Обязательной Подписки истек!</b>\n\n"
+                                f"Привязка канала к вашему прокси <b>#{proxy_id}</b> завершена. "
+                                f"Люди больше не обязаны подписываться на ваш канал при получении прокси.\n\n"
+                                f"👇 Нажмите кнопку ниже, чтобы возобновить конверсию трафика:"
                             )
-                        ).as_markup()
+                            # Запускаем уведомление фоном, чтобы не тормозить цикл
+                            asyncio.create_task(notify_owner(bot, owner_id, text, reply_markup=markup))
 
-                        text = (
-                            f"🔔 <b>Срок спонсорства истек!</b>\n\n"
-                            f"Привязка канала к вашему прокси <b>#{proxy_id}</b> завершена. "
-                            f"Люди, переходящие по вашей реферальной ссылке, больше не обязаны подписываться на ваш канал.\n\n"
-                            f"👇 Нажмите кнопку ниже, чтобы возобновить конверсию трафика:"
-                        )
-                        await notify_owner(bot, owner_id, text, reply_markup=markup)
+                # 2. Формируем задачи для конкурентного пинга
+                ping_tasks = []
+                for proxy in proxies:
+                    host, port = parse_proxy_url(proxy.url)
+                    if host and port:
+                        ping_tasks.append(_ping_task(proxy.id, host, port, semaphore))
 
+                # Запускаем все пинги одновременно (пачками по 50) и ждем результатов
+                ping_results = await asyncio.gather(*ping_tasks)
 
-                # Запоминаем состояние ДО проверки
-                was_active = proxy.is_active
-                old_score = proxy.score
+                # Превращаем результаты в словарь для быстрого поиска {proxy_id: (is_alive, resp_time)}
+                ping_dict = {res[0]: (res[1], res[2]) for res in ping_results}
 
-                # Пингуем
-                tcp_ping, resp_time = await ping_proxy(proxy.url)
+                # 3. Применяем результаты пингов к базе данных
+                for proxy in proxies:
+                    if proxy.id not in ping_dict:
+                        continue
 
-                proxy.total_checks += 1
+                    is_alive, resp_time = ping_dict[proxy.id]
+                    was_active = proxy.is_active
 
-                if tcp_ping is not None and resp_time is not None:
-                    proxy.success_checks += 1
-                    proxy.is_active = True
+                    if is_alive:
+                        # УСПЕХ: Обнуляем страйки
+                        proxy_strikes[proxy.id] = 0
 
-                    # 1. Считаем базовый сетевой скор
-                    raw_score = (tcp_ping * 0.3) + (resp_time * 0.7)
+                        proxy.is_active = True
+                        proxy.success_checks += 1
+                        proxy.total_checks += 1
 
-                    # 2. Влияние Premium-голосования
-                    rating_modifier = (proxy.premium_dislikes * 50.0) - (proxy.premium_likes * 20.0)
-                    new_score = raw_score + rating_modifier
+                        # Обновляем скор (чем меньше время ответа, тем лучше скор)
+                        # Формула: Рейтинг = Лайки - Дизлайки - (Время_ответа / 100)
+                        proxy.score = float(proxy.likes - proxy.dislikes - (resp_time / 100.0))
 
-                    if new_score < 1.0:
-                        new_score = 1.0
+                    else:
+                        # ПРОВАЛ: Начисляем страйк
+                        current_strikes = proxy_strikes.get(proxy.id, 0) + 1
+                        proxy_strikes[proxy.id] = current_strikes
+                        proxy.total_checks += 1
 
-                    proxy.score = new_score
+                        # Правило 3-х страйков
+                        if current_strikes >= 3:
+                            proxy.is_active = False
+                            proxy.score = 9999.0
 
-                    # АЛЕРТ 1: Сильная деградация
-                    if old_score < 1500 and new_score >= 1500:
-                        short_url = proxy.url.split('@')[-1] if '@' in proxy.url else proxy.url
+                            # Уведомляем только 1 раз при падении
+                            if was_active:
+                                short_url = proxy.url.split('@')[-1] if '@' in proxy.url else proxy.url
+                                alert_text = (
+                                    f"🚨 <b>Ваш прокси перестал работать!</b>\n\n"
+                                    f"💀 Он не отвечает на запросы (3 попытки подряд) и временно исключен из выдачи:\n"
+                                    f"🌐 <code>{short_url}</code>\n\n"
+                                    f"🔧 <i>Пожалуйста, проверьте работу сервера.</i>"
+                                )
+                                asyncio.create_task(notify_owner(bot, proxy.owner_id, alert_text))
 
-                        alert_text = (
-                            f"⚠️ <b>Внимание! Ваш прокси деградирует!</b>\n\n"
-                            f"🌐 <code>{short_url}</code>\n\n"
-                            f"📉 Рейтинг (скор) упал до <b>{round(new_score, 1)}</b>.\n"
-                            f"<i>Сервер перегружен или получил много Premium-дизлайков.</i>"
-                        )
-
-                        # Если есть владелец — пишем ему. Если нет (системный прокси) — пишем админам.
-                        if proxy.owner_id:
-                            await notify_owner(bot, proxy.owner_id, alert_text)
-                        else:
-                            await notify_admins(bot,
-                                                f"⚠️ [Админ] Деградация системного прокси:\n<code>{short_url}</code>")
-
-                else:
-                    proxy.is_active = False
-                    proxy.score = 9999.0
-
-                    # АЛЕРТ 2: Прокси отвалился (был активен, а теперь нет)
-                    if was_active:
-                        short_url = proxy.url.split('@')[-1] if '@' in proxy.url else proxy.url
-
-                        alert_text = (
-                            f"🚨 <b>Ваш прокси перестал работать!</b>\n\n"
-                            f"💀 Он не отвечает на пинг и временно исключен из выдачи:\n"
-                            f"🌐 <code>{short_url}</code>\n\n"
-                            f"🔧 <i>Пожалуйста, проверьте работу сервера.</i>"
-                        )
-
-                        if proxy.owner_id:
-                            await notify_owner(bot, proxy.owner_id, alert_text)
-                        else:
-                            await notify_admins(bot, f"🚨 [Админ] Системный прокси мертв:\n<code>{short_url}</code>")
-
+                # Сохраняем все изменения в БД одним махом
                 await session.commit()
-                await asyncio.sleep(0.2)  # Пауза между проверками разных прокси
 
-        # Ждем 3 минуты до следующего круга
+        except Exception as e:
+            print(f"Ошибка в рокере: {e}")
+
+        # Спим 3 минуты до следующей проверки
         await asyncio.sleep(180)

@@ -27,35 +27,28 @@ def parse_proxy_url(proxy_url: str):
     return host, port
 
 
-async def ping_proxy(proxy_url: str, timeout_seconds: int = 4) -> tuple[float | None, float | None]:
-    host, port = parse_proxy_url(proxy_url)
-    if not host or not port:
-        return None, None
-
-    start_tcp = time.time()
+async def ping_proxy(host: str, port: int, timeout: int = 2) -> tuple[bool, float]:
+    """
+    Проверяет доступность прокси с помощью чистого TCP Handshake.
+    Возвращает (is_alive, response_time_ms)
+    """
+    start_time = time.time()
     try:
-        # Замеряем чисто сетевой пинг (TCP)
+        # Пытаемся установить TCP-соединение с жестким таймаутом
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection(host, port),
-            timeout=timeout_seconds
+            timeout=timeout
         )
-        tcp_ping_ms = round((time.time() - start_tcp) * 1000, 2)
 
-        # Замеряем время отклика (Нагрузка на сервер)
-        start_response = time.time()
-        writer.write(b"\x00\x01\x02")
-        await writer.drain()
+        # Если код дошел сюда — соединение успешно установлено!
+        connect_time_ms = (time.time() - start_time) * 1000
 
-        try:
-            await asyncio.wait_for(reader.read(1), timeout=2.0)
-        except Exception:
-            pass  # Если не ответил, но соединение держит - это тоже норм для некоторых прокси
-
-        response_time_ms = round((time.time() - start_response) * 1000, 2)
-
+        # Вежливо закрываем соединение, чтобы не спамить сервер
         writer.close()
         await writer.wait_closed()
 
-        return tcp_ping_ms, response_time_ms
-    except Exception:
-        return None, None
+        return True, connect_time_ms
+
+    except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
+        # Сервер не ответил или отказал в подключении
+        return False, 0.0

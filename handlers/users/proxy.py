@@ -7,7 +7,7 @@ from database.requests.get import get_all_channels, get_best_proxy, get_proxy_by
 from keyboards.inline import get_subscription_keyboard, get_proxy_control_keyboard, get_proxy_vote_keyboard
 from utils.ping import parse_proxy_url
 from utils.subscription import get_unsubscribed_channels
-from utils.texts import get_public_proxy_text
+from utils.texts import get_public_proxy_text, get_proxy_card_text
 
 router = Router()
 
@@ -97,8 +97,12 @@ async def send_specific_proxy(message: types.Message, proxy_id: int, bot: Bot):
         return
 
     bot_info = await bot.get_me()
-    text = get_public_proxy_text(proxy, bot_info.username)
-    markup = get_proxy_vote_keyboard(proxy.id, proxy.url, proxy.likes, proxy.dislikes)
+
+    # Текст без призыва жать "Другой прокси"
+    text = get_proxy_card_text(proxy, bot_info.username, is_direct_link=True)
+
+    # Клавиатура без кнопки "Другой прокси"
+    markup = get_proxy_vote_keyboard(proxy.id, proxy.url, proxy.likes, proxy.dislikes, show_replace=False)
 
     await message.answer(text, reply_markup=markup, disable_web_page_preview=True)
 

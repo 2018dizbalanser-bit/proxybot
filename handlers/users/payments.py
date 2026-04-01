@@ -1,7 +1,9 @@
 from aiogram import Router, F, types, Bot
 from datetime import datetime, timedelta
 
-from database.models import Proxy
+from sqlalchemy import select
+
+from database.models import Proxy, User
 from database.connect import async_session
 
 router = Router()
@@ -12,21 +14,46 @@ router = Router()
 async def pre_checkout_handler(pre_checkout_query: types.PreCheckoutQuery):
     await pre_checkout_query.answer(ok=True)
 
-
-# --- 2. Универсальный приемщик ВСЕХ успешных платежей ---
+# --- Универсальный приемщик ВСЕХ успешных платежей ---
 @router.message(F.successful_payment)
 async def successful_payment_handler(message: types.Message, bot: Bot):
     payload = message.successful_payment.invoice_payload
 
-    # Роутер (маршрутизатор) платежей по payload
     if payload.startswith("sponsor_"):
         await process_sponsor_payment(message, bot, payload)
 
-    elif payload.startswith("slots_"):
-        pass  # Заглушка для будущей покупки слотов
+    elif payload.startswith("slot_"):
+        await process_slot_payment(message, payload)
 
-    elif payload.startswith("boost_"):
-        pass  # Заглушка для будущего буста
+
+# --- Логика начисления СЛОТА ---
+async def process_slot_payment(message: types.Message, payload: str):
+    # Берем ID напрямую у того, кто совершил платеж (это 100% надежно)
+    user_id = message.from_user.id
+
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.tg_id == user_id))
+        user = result.scalar_one_or_none()
+
+        if user:
+            # ЗАЩИТА ОТ NULL: Если в базе пустота, считаем что было 3
+            current_limit = user.proxy_limit if user.proxy_limit is not None else 3
+            user.proxy_limit = current_limit + 1
+            new_limit = user.proxy_limit
+            await session.commit()
+        else:
+            # На случай полтергейста: если юзера нет, создаем его сразу с 4 слотами
+            new_user = User(tg_id=user_id, proxy_limit=4)
+            session.add(new_user)
+            await session.commit()
+            new_limit = 4
+
+    await message.answer(
+        f"🎉 <b>Оплата успешно прошла!</b>\n\n"
+        f"Ваш лимит прокси-серверов увеличен.\n"
+        f"Теперь вы можете добавить до <b>{new_limit}</b> серверов!\n\n"
+        f"Перейдите в «👤 Личный кабинет» -> «🌐 Мои прокси», чтобы добавить новый сервер."
+    )
 
 
 # --- 3. Логика начисления Спонсора ---
@@ -34,10 +61,12 @@ async def process_sponsor_payment(message: types.Message, bot: Bot, payload: str
     parts = payload.split("_")
     proxy_id = int(parts[1])
     channel_id = int(parts[2])
+    # Достаем дни из payload
+    days = int(parts[3])
 
-    # Бот генерирует ссылку-приглашение в канал
     invite_link = await bot.export_chat_invite_link(channel_id)
-    until_date = datetime.utcnow() + timedelta(days=7)
+    # Прибавляем динамическое количество дней!
+    until_date = datetime.utcnow() + timedelta(days=days)
 
     async with async_session() as session:
         proxy = await session.get(Proxy, proxy_id)
@@ -49,7 +78,7 @@ async def process_sponsor_payment(message: types.Message, bot: Bot, payload: str
 
     await message.answer(
         f"🎉 <b>Оплата успешно прошла!</b>\n\n"
-        f"Канал привязан к прокси <b>#{proxy_id}</b> до <code>{until_date.strftime('%d.%m.%Y %H:%M')}</code>.\n\n"
+        f"Канал привязан к прокси <b>#{proxy_id}</b> на <b>{days} дней</b> (до <code>{until_date.strftime('%d.%m.%Y %H:%M')}</code>).\n\n"
         f"Теперь скопируйте вашу реферальную ссылку в Личном кабинете и продвигайте её. "
         f"Все перешедшие по ней будут обязаны подписаться на ваш канал!"
     )
