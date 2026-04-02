@@ -15,6 +15,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     proxy_limit: Mapped[int] = mapped_column(default=3, server_default='3')
+    ref_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -58,6 +59,9 @@ class Proxy(Base):
     sponsor_channel_url: Mapped[str | None] = mapped_column(String(100), nullable=True)
     sponsor_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Срок действия БУСТА
+    boost_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
 
 
 # 4. Новая таблица для хранения голосов пользователей
@@ -75,3 +79,23 @@ class Vote(Base):
     is_premium: Mapped[bool] = mapped_column(Boolean, default=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AdLink(Base):
+    __tablename__ = 'ad_links'
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    clicks: Mapped[int] = mapped_column(default=0)      # Всего переходов (кто нажал /start)
+    new_users: Mapped[int] = mapped_column(default=0)   # Новых регистраций по ссылке
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+
+class ProxyView(Base):
+    __tablename__ = 'proxy_views'
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    proxy_id: Mapped[int] = mapped_column(Integer, index=True)
+    viewed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

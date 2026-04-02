@@ -1,20 +1,21 @@
 from sqlalchemy import select
 from database.connect import async_session
-from database.models import User, Channel, Proxy, Vote
+from database.models import User, Channel, Proxy, Vote, AdLink
 
 
-async def add_user(tg_id: int, username: str | None = None):
+async def add_user(tg_id: int, username: str | None = None, ref_name: str | None = None):
     async with async_session() as session:
         result = await session.execute(select(User).where(User.tg_id == tg_id))
         user = result.scalar_one_or_none()
 
         if not user:
-            new_user = User(tg_id=tg_id, username=username, is_active=True)
+            new_user = User(tg_id=tg_id, username=username, is_active=True, ref_name=ref_name)
             session.add(new_user)
         else:
-            user.is_active = True # Реактивируем пользователя
+            user.is_active = True
             if user.username != username:
                 user.username = username
+            # Если юзер уже был, но перешел по новой рефке, мы не перезаписываем его первый источник
         await session.commit()
 
 

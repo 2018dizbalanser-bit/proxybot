@@ -14,6 +14,7 @@ router = Router()
 async def pre_checkout_handler(pre_checkout_query: types.PreCheckoutQuery):
     await pre_checkout_query.answer(ok=True)
 
+
 # --- Универсальный приемщик ВСЕХ успешных платежей ---
 @router.message(F.successful_payment)
 async def successful_payment_handler(message: types.Message, bot: Bot):
@@ -24,6 +25,10 @@ async def successful_payment_handler(message: types.Message, bot: Bot):
 
     elif payload.startswith("slot_"):
         await process_slot_payment(message, payload)
+
+    # ВОТ ЭТОТ БЛОК НУЖНО ДОБАВИТЬ:
+    elif payload.startswith("boost_"):
+        await process_boost_payment(message, payload)
 
 
 # --- Логика начисления СЛОТА ---
@@ -81,4 +86,26 @@ async def process_sponsor_payment(message: types.Message, bot: Bot, payload: str
         f"Канал привязан к прокси <b>#{proxy_id}</b> на <b>{days} дней</b> (до <code>{until_date.strftime('%d.%m.%Y %H:%M')}</code>).\n\n"
         f"Теперь скопируйте вашу реферальную ссылку в Личном кабинете и продвигайте её. "
         f"Все перешедшие по ней будут обязаны подписаться на ваш канал!"
+    )
+
+
+# Добавь в payments.py функцию:
+
+async def process_boost_payment(message: types.Message, payload: str):
+    proxy_id = int(payload.split("_")[1])
+
+    async with async_session() as session:
+        proxy = await session.get(Proxy, proxy_id)
+        if proxy:
+            now = datetime.utcnow()
+            # Если буст еще действует, продлеваем его. Если нет - стартуем с текущего момента.
+            start_time = proxy.boost_until if (proxy.boost_until and proxy.boost_until > now) else now
+            proxy.boost_until = start_time + timedelta(hours=24)
+            new_date = proxy.boost_until
+            await session.commit()
+
+    await message.answer(
+        f"🚀 <b>Буст активирован!</b>\n\n"
+        f"Прокси <b>#{proxy_id}</b> поднят в категорию VIP до <code>{new_date.strftime('%d.%m %H:%M')}</code>.\n"
+        f"Теперь пользователи будут видеть его в первую очередь!"
     )

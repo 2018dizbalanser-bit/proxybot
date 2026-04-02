@@ -14,3 +14,5 @@ async def delete_proxy_db(db_id: int):
         if proxy:
             await session.delete(proxy)
             await session.commit()
+
+

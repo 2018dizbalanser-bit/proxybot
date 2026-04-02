@@ -106,7 +106,7 @@ async def show_proxies(callback: types.CallbackQuery):
 
     # Асинхронно проверяем пинг для всех прокси
     for proxy in proxies:
-        ping = await ping_proxy(proxy.url)
+        ping = await ping_proxy(proxy.url, proxy.port)
         proxies_with_ping.append((proxy.id, proxy.url, ping))
 
     await callback.message.edit_text(

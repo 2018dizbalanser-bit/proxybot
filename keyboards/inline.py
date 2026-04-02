@@ -1,3 +1,5 @@
+import urllib
+
 from aiogram import types
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -86,55 +88,108 @@ def get_proxy_control_keyboard(current_proxy_id: int):
     return builder.as_markup()
 
 
-def get_proxy_vote_keyboard(proxy_id: int, url: str, likes: int, dislikes: int, show_replace: bool = True):
+def get_proxy_vote_keyboard(proxy_id: int, url: str, likes: int, dislikes: int, bot_username: str,
+                            show_replace: bool = True):
     builder = InlineKeyboardBuilder()
+
+    # 1-й ряд: Огромная CTA-кнопка подключения
     builder.row(types.InlineKeyboardButton(text="🚀 Подключиться", url=url))
+
+    # 2-й ряд: Голосование (делим пополам)
     builder.row(
         types.InlineKeyboardButton(text=f"👍 {likes}", callback_data=f"vote_{proxy_id}_up"),
         types.InlineKeyboardButton(text=f"👎 {dislikes}", callback_data=f"vote_{proxy_id}_down")
     )
-    if show_replace:
-        builder.row(types.InlineKeyboardButton(text="🔄 Другой прокси", callback_data=f"replace_proxy_{proxy_id}"))
-    return builder.as_markup()
 
+    # --- Генерируем ссылку для "Поделиться" ---
+    share_url = f"https://t.me/{bot_username}?start=prx_{proxy_id}"
+    # Красивый заготовленный текст, который отправится вместе со ссылкой:
+    share_text = "🔥 Смотри, какой быстрый и бесплатный прокси я нашел! Подключайся в один клик 👇\n"
+    # Кодируем текст, чтобы Telegram его понял
+    encoded_text = urllib.parse.quote(share_text)
+    tg_share_link = f"https://t.me/share/url?url={encoded_text}&text={share_url}"
+
+    # 3-й ряд: Кнопки действий (Шер и Замена)
+    action_row = [types.InlineKeyboardButton(text="🔗 Поделиться", url=tg_share_link)]
+    if show_replace:
+        action_row.append(types.InlineKeyboardButton(text="🔄 Другой прокси", callback_data=f"replace_proxy_{proxy_id}"))
+
+    builder.row(*action_row)
+
+    return builder.as_markup()
 
 
 def get_cabinet_main_keyboard():
-    """Главное меню кабинета (Минималистичное)"""
+    """Главное меню личного кабинета"""
     builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="🌐 Мои прокси-сервера", callback_data="my_proxies"))
-    builder.row(types.InlineKeyboardButton(text="💎 VIP-статус", callback_data="buy_vip"))
+    builder.row(types.InlineKeyboardButton(text="⭐ Мои избранные прокси", callback_data="liked_proxies_list"))
+    # Оставляем callback_data="my_proxies", так как на нем уже завязана логика владельца серверов
+    builder.row(types.InlineKeyboardButton(text="⚙️ Панель партнера", callback_data="my_proxies"))
     return builder.as_markup()
 
 
-def get_my_proxies_keyboard(proxies: list):
-    """Подменю: Список добавленных прокси пользователя"""
+def get_liked_proxies_keyboard(proxies):
+    """Список лайкнутых прокси"""
     builder = InlineKeyboardBuilder()
+
     for p in proxies:
-        status_emoji = "🟢" if p.is_active else "🔴"
-        builder.row(types.InlineKeyboardButton(
-            text=f"{status_emoji} Прокси #{p.id}",
-            callback_data=f"proxy_manage_{p.id}"
-        ))
-    builder.row(types.InlineKeyboardButton(text="➕ Добавить прокси", callback_data="user_add_proxy"))
+        host = p.url.split("server=")[1].split("&")[0] if "server=" in p.url else "Скрытый адрес"
+        builder.row(types.InlineKeyboardButton(text=f"🟢 #{p.id} | {host}", callback_data=f"show_liked_prx_{p.id}"))
+
     builder.row(types.InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_cabinet"))
     return builder.as_markup()
 
 
-def get_proxy_manage_keyboard(proxy_id: int, has_sponsor: bool = False, is_public: bool = True):
+def get_my_proxies_keyboard(proxies):
+    """Клавиатура со списком прокси пользователя"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="🚀 Буст в ТОП", callback_data=f"buy_boost_{proxy_id}")
 
+    for proxy in proxies:
+        status = "🟢" if proxy.is_active else "🔴"
+
+        # Достаем IP или домен из MTProto ссылки
+        host = "Скрытый адрес"
+        if "server=" in proxy.url:
+            # Парсим: берем всё что после server= и до следующего &
+            host = proxy.url.split("server=")[1].split("&")[0]
+
+        # Формируем красивый текст кнопки
+        btn_text = f"{status} #{proxy.id} | {host}"
+
+        builder.row(types.InlineKeyboardButton(
+            text=btn_text,
+            callback_data=f"proxy_manage_{proxy.id}"
+        ))
+
+    builder.row(types.InlineKeyboardButton(text="➕ Добавить прокси", callback_data="user_add_proxy"))
+    builder.row(types.InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_cabinet"))
+
+    return builder.as_markup()
+
+
+# Добавили is_boosted: bool = False
+def get_proxy_manage_keyboard(proxy_id: int, has_sponsor: bool = False, is_public: bool = True,
+                              is_boosted: bool = False):
+    builder = InlineKeyboardBuilder()
+
+    # МЕНЯЕМ КНОПКУ БУСТА В ЗАВИСИМОСТИ ОТ СТАТУСА
+    if is_boosted:
+        builder.button(text="🚀 Продлить Буст (+24ч)", callback_data=f"buy_boost_{proxy_id}")
+    else:
+        builder.button(text="🚀 Буст в ТОП", callback_data=f"buy_boost_{proxy_id}")
+
+    # ... остальной код (спонсор, видимость, удаление, назад) ...
     if has_sponsor:
         builder.button(text="📢 Настройки ОП", callback_data=f"manage_sponsor_{proxy_id}")
     else:
-        # Изменили callback_data на sponsor_menu_
-        builder.button(text="📢 Включить ОП", callback_data=f"sponsor_menu_{proxy_id}")
+        builder.button(text="📢 Купить ОП", callback_data=f"sponsor_menu_{proxy_id}")
 
     visibility_text = "👁 В каталоге: ДА" if is_public else "🚫 В каталоге: НЕТ"
     builder.button(text=visibility_text, callback_data=f"toggle_public_{proxy_id}")
+
     builder.button(text="🗑 Удалить", callback_data=f"user_delete_prx_{proxy_id}")
     builder.button(text="🔙 К списку", callback_data="my_proxies")
+
     builder.adjust(1, 1, 2, 1)
     return builder.as_markup()
 

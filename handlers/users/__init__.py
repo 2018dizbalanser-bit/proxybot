@@ -4,6 +4,8 @@ from .proxy import router as proxy_router
 from .status import router as status_router
 from .cabinet import router as cabinet_router
 from .payments import router as payments_router
+from .events import router as events_router
+from .echo import router as echo_router
 
 def setup_users_routers() -> Router:
     router = Router()
@@ -12,4 +14,7 @@ def setup_users_routers() -> Router:
     router.include_router(status_router)
     router.include_router(cabinet_router)
     router.include_router(payments_router)
+    router.include_router(events_router)
+
+    router.include_router(echo_router)
     return router

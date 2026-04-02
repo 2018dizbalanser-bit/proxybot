@@ -51,8 +51,10 @@ async def background_proxy_checker(bot: Bot):
                 result = await session.execute(select(Proxy))
                 proxies = result.scalars().all()
 
-                # 1. Быстрая синхронная проверка спонсоров
+                # 1. Быстрая синхронная проверка спонсоров и БУСТОВ
                 for proxy in proxies:
+
+                    # --- Проверка Обязательной Подписки (ОП) ---
                     if proxy.sponsor_until and proxy.sponsor_until < datetime.utcnow():
                         proxy_id = proxy.id
                         owner_id = proxy.owner_id
@@ -65,7 +67,7 @@ async def background_proxy_checker(bot: Bot):
                             markup = InlineKeyboardBuilder().row(
                                 types.InlineKeyboardButton(
                                     text="📢 Продлить ОП",
-                                    callback_data=f"sponsor_menu_{proxy_id}"  # Изменили тут!
+                                    callback_data=f"sponsor_menu_{proxy_id}"
                                 )
                             ).as_markup()
 
@@ -75,7 +77,29 @@ async def background_proxy_checker(bot: Bot):
                                 f"Люди больше не обязаны подписываться на ваш канал при получении прокси.\n\n"
                                 f"👇 Нажмите кнопку ниже, чтобы возобновить конверсию трафика:"
                             )
-                            # Запускаем уведомление фоном, чтобы не тормозить цикл
+                            asyncio.create_task(notify_owner(bot, owner_id, text, reply_markup=markup))
+
+                    # --- Проверка Буста в ТОП (НОВОЕ) ---
+                    if proxy.boost_until and proxy.boost_until < datetime.utcnow():
+                        proxy_id = proxy.id
+                        owner_id = proxy.owner_id
+
+                        # Сбрасываем время буста, чтобы уведомить строго 1 раз
+                        proxy.boost_until = None
+
+                        if owner_id:
+                            markup = InlineKeyboardBuilder().row(
+                                types.InlineKeyboardButton(
+                                    text="🚀 Продлить Буст",
+                                    callback_data=f"buy_boost_{proxy_id}"
+                                )
+                            ).as_markup()
+
+                            text = (
+                                f"📉 <b>Действие Буста завершено!</b>\n\n"
+                                f"Ваш прокси <b>#{proxy_id}</b> потерял VIP-статус и вернулся в общую очередь выдачи.\n\n"
+                                f"👇 Нажмите кнопку ниже, чтобы снова поднять его в ТОП и получать максимум трафика:"
+                            )
                             asyncio.create_task(notify_owner(bot, owner_id, text, reply_markup=markup))
 
                 # 2. Формируем задачи для конкурентного пинга

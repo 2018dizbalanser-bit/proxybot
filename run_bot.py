@@ -18,13 +18,15 @@ async def main():
     # print("База данных подключена и таблицы созданы.")
 
     # Инициализируем бота и диспетчер
+    # bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode='html'), proxy="socks5://72.49.49.11:31034")
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode='html'))
+
     dp = Dispatcher()
 
     # Подключаем роутеры (раскомментируем позже)
     dp.include_routers(
-        setup_users_routers(),
-        setup_admin_routers()
+        setup_admin_routers(),
+        setup_users_routers()
     )
 
     # Запускаем фоновый чекер (он не блокирует работу бота!)

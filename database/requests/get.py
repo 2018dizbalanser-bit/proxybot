@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_, case
 from database.connect import async_session
-from database.models import User, Channel, Proxy
+from database.models import User, Channel, Proxy, AdLink, ProxyView, Vote
+
 
 async def get_all_users():
     async with async_session() as session:
@@ -20,31 +21,81 @@ async def get_all_proxies():
         return result.all()
 
 
-async def get_best_proxy(exclude_id: int = None):
+async def get_best_proxy(user_id: int, exclude_id: int = None, is_replace: bool = False):
     async with async_session() as session:
-        query = select(Proxy).where(Proxy.is_active == True, Proxy.is_public == True)
+        now = datetime.utcnow()
 
-        if exclude_id is not None:
+        query = (
+            select(Proxy)
+            .outerjoin(ProxyView, and_(ProxyView.proxy_id == Proxy.id, ProxyView.user_id == user_id))
+            .outerjoin(Vote, and_(Vote.proxy_id == Proxy.id, Vote.user_id == user_id))
+            .where(Proxy.is_active == True, Proxy.is_public == True)
+        )
+
+        if exclude_id:
             query = query.where(Proxy.id != exclude_id)
 
-        result = await session.scalars(query)
-        proxies = list(result.all())
+        if not is_replace:
+            # 🚀 ГЛАВНАЯ КНОПКА (Промо решают)
+            query = query.order_by(
+                case(
+                    (Vote.is_upvote == False, 4),
+                    (and_(Proxy.boost_until > now, ProxyView.id.is_(None)), 0),
+                    (and_(Proxy.boost_until > now, ProxyView.id.is_not(None)), 1),
+                    (ProxyView.id.is_(None), 2),
+                    else_=3
+                ),
+                # МАГИЯ ТУТ: Сначала старые просмотры, потом рейтинг
+                ProxyView.viewed_at.asc(),
+                Proxy.score.desc()
+            )
+        else:
+            # 🔄 КНОПКА ЗАМЕНЫ (Просто дай лучший сервер)
+            query = query.order_by(
+                case(
+                    (Vote.is_upvote == False, 2),
+                    (ProxyView.id.is_(None), 0),
+                    else_=1
+                ),
+                # МАГИЯ ТУТ: Круговая карусель для просмотренных
+                ProxyView.viewed_at.asc(),
+                Proxy.score.desc()
+            )
 
-        if not proxies:
-            return None
+        query = query.limit(1)
+        result = await session.execute(query)
+        return result.scalar_one_or_none()
 
-        stable_proxies = []
-        for p in proxies:
-            uptime = (p.success_checks / p.total_checks * 100) if p.total_checks > 0 else 100
-            if uptime >= 80 or p.total_checks < 5:
-                stable_proxies.append(p)
 
-        if not stable_proxies:
-            stable_proxies = proxies
+# Функция для фиксации просмотра
+async def mark_proxy_viewed(user_id: int, proxy_id: int):
+    async with async_session() as session:
+        result = await session.execute(
+            select(ProxyView).where(ProxyView.user_id == user_id, ProxyView.proxy_id == proxy_id)
+        )
+        view = result.scalar_one_or_none()
 
-        stable_proxies.sort(key=lambda x: x.score)
+        if not view:
+            # Юзер видит сервер впервые
+            new_view = ProxyView(user_id=user_id, proxy_id=proxy_id)
+            session.add(new_view)
+        else:
+            # Юзер видит сервер повторно — обновляем время на "сейчас"!
+            view.viewed_at = datetime.utcnow()
 
-        return stable_proxies[0]
+        await session.commit()
+
+
+async def check_if_viewed(user_id: int, proxy_id: int) -> bool:
+    """Проверяет, видел ли пользователь этот прокси ранее"""
+    async with async_session() as session:
+        result = await session.execute(
+            select(ProxyView).where(
+                ProxyView.user_id == user_id,
+                ProxyView.proxy_id == proxy_id
+            )
+        )
+        return result.scalar_one_or_none() is not None
 
 
 async def get_users_stats() -> tuple[int, int]:
@@ -120,3 +171,113 @@ async def get_user(tg_id: int):
     async with async_session() as session:
         result = await session.execute(select(User).where(User.tg_id == tg_id))
         return result.scalar_one_or_none()
+
+
+
+async def get_ad_link(name: str):
+    async with async_session() as session:
+        result = await session.execute(select(AdLink).where(AdLink.name == name))
+        return result.scalar_one_or_none()
+
+async def create_ad_link(name: str):
+    async with async_session() as session:
+        new_link = AdLink(name=name)
+        session.add(new_link)
+        await session.commit()
+
+async def increment_ad_click(name: str):
+    """Увеличивает счетчик ВСЕХ кликов по ссылке"""
+    async with async_session() as session:
+        result = await session.execute(select(AdLink).where(AdLink.name == name))
+        ad_link = result.scalar_one_or_none()
+        if ad_link:
+            ad_link.clicks += 1
+            await session.commit()
+
+
+async def get_ad_link_stats(ref_name: str) -> dict:
+    """Собирает админскую статистику по конкретной реферальной ссылке"""
+    async with async_session() as session:
+        # Проверяем, существует ли ссылка
+        link_res = await session.execute(select(AdLink).where(AdLink.name == ref_name))
+        ad_link = link_res.scalar_one_or_none()
+
+        if not ad_link:
+            return None
+
+        now = datetime.utcnow()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday_start = today_start - timedelta(days=1)
+        week_start = today_start - timedelta(days=7)
+        month_start = today_start - timedelta(days=30)
+
+        # Вытаскиваем всех юзеров по этой ссылке
+        users_res = await session.execute(select(User).where(User.ref_name == ref_name))
+        users = users_res.scalars().all()
+
+        total = len(users)
+        active = sum(1 for u in users if u.is_active)
+        blocked = total - active
+
+        today = sum(1 for u in users if u.created_at >= today_start)
+        yesterday = sum(1 for u in users if yesterday_start <= u.created_at < today_start)
+        week = sum(1 for u in users if u.created_at >= week_start)
+        month = sum(1 for u in users if u.created_at >= month_start)
+
+        return {
+            "name": ad_link.name,
+            "clicks": ad_link.clicks,
+            "created_at": ad_link.created_at,
+            "total": total,
+            "active": active,
+            "blocked": blocked,
+            "today": today,
+            "yesterday": yesterday,
+            "week": week,
+            "month": month
+        }
+
+
+async def get_user_liked_proxies(user_id: int):
+    """Получает список живых прокси, которые лайкнул пользователь"""
+    async with async_session() as session:
+        # Джойним таблицы: берем прокси, если есть запись в Vote с лайком от этого юзера
+        query = select(Proxy).join(Vote, Vote.proxy_id == Proxy.id).where(
+            Vote.user_id == user_id,
+            Vote.is_upvote == True,
+            Proxy.is_active == True  # Показываем только живые!
+        ).order_by(Proxy.score.desc()).limit(15)  # Ограничим до 15 лучших, чтобы не перегружать интерфейс
+
+        result = await session.execute(query)
+        return result.scalars().all()
+
+
+from sqlalchemy import select, func
+from database.models import ProxyView, Vote, Proxy
+
+async def get_user_stats_for_cabinet(user_id: int) -> dict:
+    """Собирает статистику активности пользователя для Личного кабинета"""
+    async with async_session() as session:
+        # Считаем просмотренные прокси
+        viewed_res = await session.execute(
+            select(func.count(ProxyView.id)).where(ProxyView.user_id == user_id)
+        )
+        viewed_count = viewed_res.scalar() or 0
+
+        # Считаем лайкнутые (добавленные в избранное)
+        liked_res = await session.execute(
+            select(func.count(Vote.id)).where(Vote.user_id == user_id, Vote.is_upvote == True)
+        )
+        liked_count = liked_res.scalar() or 0
+
+        # Считаем добавленные сервера (для партнеров)
+        added_res = await session.execute(
+            select(func.count(Proxy.id)).where(Proxy.owner_id == user_id)
+        )
+        added_count = added_res.scalar() or 0
+
+        return {
+            "viewed": viewed_count,
+            "liked": liked_count,
+            "added": added_count
+        }
