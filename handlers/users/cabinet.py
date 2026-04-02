@@ -4,7 +4,6 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.exc import IntegrityError
 
-from data.config import PRICE_SPONSOR_30_DAYS, PRICE_SPONSOR_7_DAYS, PRICE_BOOST
 from database.models import Proxy
 from database.connect import async_session
 from database.requests.get import get_user_proxies, get_proxy_by_id, get_user, get_user_liked_proxies, \
@@ -211,8 +210,13 @@ async def process_sponsor_channel(message: types.Message, state: FSMContext, bot
     proxy_id = data['proxy_id']
     days = data['days']
 
+    settings = await get_bot_settings()
+    price_sponsor_7 = settings.price_sponsor_7
+    price_sponsor_30 = settings.price_sponsor_30
+
+
     # Определяем цену из конфига в зависимости от дней
-    amount = PRICE_SPONSOR_30_DAYS if days == 30 else PRICE_SPONSOR_7_DAYS
+    amount = price_sponsor_30 if days == 30 else price_sponsor_7
 
     # Формируем Payload: добавляем туда количество дней! (sponsor_15_-100123_30)
     payload = f"sponsor_{proxy_id}_{channel_id}_{days}"
@@ -507,8 +511,10 @@ async def toggle_public_handler(callback: types.CallbackQuery, bot: Bot):
 @router.callback_query(F.data.startswith("buy_boost_"))
 async def buy_boost_handler(callback: types.CallbackQuery):
     proxy_id = int(callback.data.split("_")[2])
+    settings = await get_bot_settings()
+    price_boost = settings.price_boost
 
-    prices = [types.LabeledPrice(label="Буст в ТОП (24 часа)", amount=PRICE_BOOST)]
+    prices = [types.LabeledPrice(label="Буст в ТОП (24 часа)", amount=price_boost)]
 
     await callback.message.answer_invoice(
         title="Ракета для прокси 🚀",
