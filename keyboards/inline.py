@@ -3,9 +3,10 @@ import urllib
 from aiogram import types
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from data.config import PRICE_SLOT, PRICE_SPONSOR_7_DAYS, PRICE_SPONSOR_30_DAYS
 from utils.ping import parse_proxy_url
 
+
+# админские кнопки
 
 def get_subscription_keyboard(channels: list):
     builder = InlineKeyboardBuilder()
@@ -32,15 +33,56 @@ def get_subscription_keyboard(channels: list):
 
 def admin_main_kb():
     builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="📣 Рассылка", callback_data="admin_broadcast"))
-    builder.row(types.InlineKeyboardButton(text="📢 Управление каналами", callback_data="admin_channels"))
-    builder.row(types.InlineKeyboardButton(text="🌐 Управление прокси", callback_data="admin_proxies"))
+
+    # 1 ряд: Базовые инструменты (твои старые кнопки)
+    builder.row(
+        types.InlineKeyboardButton(text="📣 Рассылка", callback_data="admin_broadcast"),
+        types.InlineKeyboardButton(text="📢 Каналы", callback_data="admin_channels")
+    )
+
+    # 2 ряд: Управление контентом и трафиком
+    builder.row(
+        types.InlineKeyboardButton(text="🔗 Рекламные ссылки", callback_data="admin_refs_0")  # Наша новая
+    )
+
+    # 3 ряд: Настройки монетизации
+    builder.row(
+        types.InlineKeyboardButton(text="⚙️ Настройки цен (⭐️)", callback_data="admin_prices")
+    )
+
     return builder.as_markup()
 
 
 def admin_back_kb():
     builder = InlineKeyboardBuilder()
     builder.row(types.InlineKeyboardButton(text="🔙 Назад в меню", callback_data="admin_main"))
+    return builder.as_markup()
+
+
+def get_admin_prices_kb(settings):
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text=f"Слот: {settings.price_slot}⭐️", callback_data="edit_price_slot"))
+    builder.row(types.InlineKeyboardButton(text=f"ОП 7 дней: {settings.price_sponsor_7}⭐️",
+                                           callback_data="edit_price_sponsor_7"))
+    builder.row(types.InlineKeyboardButton(text=f"ОП 30 дней: {settings.price_sponsor_30}⭐️",
+                                           callback_data="edit_price_sponsor_30"))
+    builder.row(types.InlineKeyboardButton(text=f"Буст: {settings.price_boost}⭐️", callback_data="edit_price_boost"))
+    builder.row(types.InlineKeyboardButton(text="🔙 Назад в Админку", callback_data="admin_main"))
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_refs_pagination_kb(page: int, total_pages: int):
+    builder = InlineKeyboardBuilder()
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(types.InlineKeyboardButton(text="⬅️", callback_data=f"admin_refs_{page - 1}"))
+    if page < total_pages - 1:
+        nav_buttons.append(types.InlineKeyboardButton(text="➡️", callback_data=f"admin_refs_{page + 1}"))
+
+    if nav_buttons:
+        builder.row(*nav_buttons)
+    builder.row(types.InlineKeyboardButton(text="🔙 Назад в Админку", callback_data="admin_main"))
     return builder.as_markup()
 
 
@@ -55,27 +97,8 @@ def admin_channels_kb(channels):
     return builder.as_markup()
 
 
-def admin_proxies_kb(proxies_with_ping):
-    builder = InlineKeyboardBuilder()
-    for proxy_id, url, ping in proxies_with_ping:
-        status = f"{ping} мс 🟢" if ping else "Мертв 🔴"
 
-        # Теперь достаем IP и Порт новой железобетонной функцией
-        host, port = parse_proxy_url(url)
-        if host and port:
-            display_name = f"{host}:{port}"  # Будет красиво, например 142.25.12.3:443
-        else:
-            display_name = url[:20] + "..."
-
-        builder.row(types.InlineKeyboardButton(
-            text=f"❌ {display_name} | {status}",
-            callback_data=f"del_prx_{proxy_id}"
-        ))
-
-    builder.row(types.InlineKeyboardButton(text="➕ Добавить прокси", callback_data="add_proxy"))
-    builder.row(types.InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main"))
-    return builder.as_markup()
-
+# юзерские кнопки
 
 def get_proxy_control_keyboard(current_proxy_id: int):
     builder = InlineKeyboardBuilder()
@@ -194,18 +217,18 @@ def get_proxy_manage_keyboard(proxy_id: int, has_sponsor: bool = False, is_publi
     return builder.as_markup()
 
 
-def get_limit_reached_keyboard():
+def get_limit_reached_keyboard(price_slot):
     builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text=f"📦 Купить +1 слот ({PRICE_SLOT} ⭐️)", callback_data="buy_slot"))
+    builder.row(types.InlineKeyboardButton(text=f"📦 Купить +1 слот ({price_slot} ⭐️)", callback_data="buy_slot"))
     builder.row(types.InlineKeyboardButton(text="🔙 Назад", callback_data="my_proxies"))
     return builder.as_markup()
 
 
 # Выбор тарифа ОП
-def get_sponsor_tariffs_keyboard(proxy_id: int):
+def get_sponsor_tariffs_keyboard(proxy_id: int, price_sponsor_7, price_sponsor_30):
     builder = InlineKeyboardBuilder()
-    builder.button(text=f"🗓 7 дней — {PRICE_SPONSOR_7_DAYS} ⭐️", callback_data=f"buy_sponsor_{proxy_id}_7")
-    builder.button(text=f"🔥 30 дней — {PRICE_SPONSOR_30_DAYS} ⭐️ (Выгодно)", callback_data=f"buy_sponsor_{proxy_id}_30")
+    builder.button(text=f"🗓 7 дней — {price_sponsor_7} ⭐️", callback_data=f"buy_sponsor_{proxy_id}_7")
+    builder.button(text=f"🔥 30 дней — {price_sponsor_30} ⭐️ (Выгодно)", callback_data=f"buy_sponsor_{proxy_id}_30")
     builder.button(text="🔙 Отмена", callback_data=f"proxy_manage_{proxy_id}")
     builder.adjust(1, 1, 1)
     return builder.as_markup()

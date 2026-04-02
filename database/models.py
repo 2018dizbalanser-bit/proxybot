@@ -99,3 +99,25 @@ class ProxyView(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, index=True)
     proxy_id: Mapped[int] = mapped_column(Integer, index=True)
     viewed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+# --- НОВАЯ ТАБЛИЦА: Настройки и Цены ---
+class BotSettings(Base):
+    __tablename__ = 'bot_settings'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    price_slot: Mapped[int] = mapped_column(Integer, default=10)
+    price_sponsor_7: Mapped[int] = mapped_column(Integer, default=50)
+    price_sponsor_30: Mapped[int] = mapped_column(Integer, default=150)
+    price_boost: Mapped[int] = mapped_column(Integer, default=50)
+
+
+# --- НОВАЯ ТАБЛИЦА: Аналитика доходов (Транзакции) ---
+class Transaction(Base):
+    __tablename__ = 'transactions'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    amount: Mapped[int] = mapped_column(Integer)  # Сумма в XTR (Звездах)
+    action: Mapped[str] = mapped_column(String(50))  # Тип: 'slot', 'sponsor_7', 'sponsor_30', 'boost'
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

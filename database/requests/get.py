@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import select, func, and_, case
+from sqlalchemy import select, func, and_, case, update
 from database.connect import async_session
-from database.models import User, Channel, Proxy, AdLink, ProxyView, Vote
+from database.models import User, Channel, Proxy, AdLink, ProxyView, Vote, Transaction, BotSettings
 
 
 async def get_all_users():
@@ -65,6 +65,13 @@ async def get_best_proxy(user_id: int, exclude_id: int = None, is_replace: bool 
         query = query.limit(1)
         result = await session.execute(query)
         return result.scalar_one_or_none()
+
+
+async def mark_user_inactive(tg_id: int):
+    """Помечает пользователя как неактивного (заблокировал бота)"""
+    async with async_session() as session:
+        await session.execute(update(User).where(User.tg_id == tg_id).values(is_active=False))
+        await session.commit()
 
 
 # Функция для фиксации просмотра
@@ -147,6 +154,73 @@ async def get_detailed_stats():
             "week": new_week or 0,
             "month": new_month or 0
         }
+
+
+# --- Настройки бота (Цены) ---
+async def get_bot_settings():
+    """Получает настройки. Если их нет - создает стандартные."""
+    async with async_session() as session:
+        result = await session.execute(select(BotSettings).where(BotSettings.id == 1))
+        settings = result.scalar_one_or_none()
+        if not settings:
+            settings = BotSettings()  # Стандартные цены из модели
+            session.add(settings)
+            await session.commit()
+            await session.refresh(settings)
+        return settings
+
+
+async def update_bot_price(field_name: str, new_price: int):
+    """Обновляет конкретную цену в БД"""
+    async with async_session() as session:
+        settings = await get_bot_settings()
+        # Прикрепляем объект к текущей сессии для изменения
+        settings = await session.merge(settings)
+        setattr(settings, field_name, new_price)
+        await session.commit()
+
+
+# --- Транзакции и Аналитика ---
+async def add_transaction(user_id: int, amount: int, action: str):
+    """Записывает успешную оплату"""
+    async with async_session() as session:
+        tx = Transaction(user_id=user_id, amount=amount, action=action)
+        session.add(tx)
+        await session.commit()
+
+
+async def get_admin_analytics():
+    """Собирает статистику для админ-панели"""
+    async with async_session() as session:
+        # 1. Считаем сервера
+        total_proxies = await session.scalar(select(func.count(Proxy.id)))
+        active_proxies = await session.scalar(select(func.count(Proxy.id)).where(Proxy.is_active == True))
+
+        # 2. Считаем пользователей
+        total_users = await session.scalar(select(func.count(User.id)))
+
+        # 3. Финансы (группируем по типу услуги)
+        tx_result = await session.execute(
+            select(Transaction.action, func.sum(Transaction.amount))
+            .group_by(Transaction.action)
+        )
+        finances = {row[0]: row[1] for row in tx_result.all()}
+
+        return total_proxies, active_proxies, total_users, finances
+
+
+# --- Рефералки (Рекламные ссылки) ---
+async def get_referral_stats():
+    """Собирает список рекламных меток и количество пришедших по ним юзеров"""
+    async with async_session() as session:
+        # Группируем юзеров по ref_name, исключая тех, кто пришел без ссылки
+        result = await session.execute(
+            select(User.ref_name, func.count(User.id))
+            .where(User.ref_name.is_not(None))
+            .group_by(User.ref_name)
+            .order_by(func.count(User.id).desc())
+        )
+        return [{"name": row[0], "users": row[1]} for row in result.all()]
 
 
 async def get_proxy_by_id(proxy_id: int):

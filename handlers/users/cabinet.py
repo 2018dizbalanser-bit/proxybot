@@ -4,11 +4,11 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.exc import IntegrityError
 
-from data.config import PRICE_SLOT, PRICE_SPONSOR_30_DAYS, PRICE_SPONSOR_7_DAYS, PRICE_BOOST
+from data.config import PRICE_SPONSOR_30_DAYS, PRICE_SPONSOR_7_DAYS, PRICE_BOOST
 from database.models import Proxy
 from database.connect import async_session
 from database.requests.get import get_user_proxies, get_proxy_by_id, get_user, get_user_liked_proxies, \
-    get_user_stats_for_cabinet
+    get_user_stats_for_cabinet, get_bot_settings
 from database.requests.delete import delete_proxy_db
 from keyboards.inline import get_cabinet_main_keyboard, get_my_proxies_keyboard, get_proxy_manage_keyboard, \
     get_limit_reached_keyboard, get_sponsor_tariffs_keyboard, get_liked_proxies_keyboard
@@ -155,7 +155,10 @@ async def sponsor_menu_handler(callback: types.CallbackQuery):
         "будут обязаны подписаться на ваш канал.\n\n"
         "Выберите желаемый тариф:"
     )
-    await callback.message.edit_text(text, reply_markup=get_sponsor_tariffs_keyboard(proxy_id))
+    settings = await get_bot_settings()
+    price_sponsor_7 = settings.price_sponsor_7
+    price_sponsor_30 = settings.price_sponsor_30
+    await callback.message.edit_text(text, reply_markup=get_sponsor_tariffs_keyboard(proxy_id, price_sponsor_7, price_sponsor_30))
 
 
 # --- 2. Нажатие на конкретный тариф (7 или 30) ---
@@ -309,14 +312,16 @@ async def start_add_proxy(callback: types.CallbackQuery, state: FSMContext):
     # Достаем пользователя из БД, чтобы узнать его личный лимит
     user = await get_user(user_id)
     user_limit = user.proxy_limit if (user and user.proxy_limit is not None) else 3
+    settings = await get_bot_settings()
+    price_slot = settings.price_slot
 
     if len(proxies) >= user_limit:
         await callback.message.edit_text(
             f"❌ <b>Достигнут лимит серверов!</b>\n\n"
             f"Ваш текущий лимит: <b>{user_limit} шт.</b>\n"
             f"Чтобы добавить новые серверы, вы можете удалить старые или докупить дополнительные слоты.\n\n"
-            f"<i>Стоимость 1 дополнительного слота навсегда: {PRICE_SLOT} ⭐️</i>",
-            reply_markup=get_limit_reached_keyboard()
+            f"<i>Стоимость 1 дополнительного слота навсегда: {price_slot} ⭐️</i>",
+            reply_markup=get_limit_reached_keyboard(price_slot)
         )
         return
 
@@ -337,7 +342,9 @@ async def start_add_proxy(callback: types.CallbackQuery, state: FSMContext):
 # --- Выставление счета за слот ---
 @router.callback_query(F.data == "buy_slot")
 async def buy_slot_invoice(callback: types.CallbackQuery, bot: Bot):
-    prices = [types.LabeledPrice(label="Дополнительный слот для прокси", amount=PRICE_SLOT)]
+    settings = await get_bot_settings()
+    price_slot = settings.price_slot
+    prices = [types.LabeledPrice(label="Дополнительный слот для прокси", amount=price_slot)]
 
     await callback.message.answer_invoice(
         title="Расширение лимита",

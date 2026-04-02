@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from database.models import Proxy, User
 from database.connect import async_session
+from database.requests.get import add_transaction
 
 router = Router()
 
@@ -19,16 +20,23 @@ async def pre_checkout_handler(pre_checkout_query: types.PreCheckoutQuery):
 @router.message(F.successful_payment)
 async def successful_payment_handler(message: types.Message, bot: Bot):
     payload = message.successful_payment.invoice_payload
+    amount = message.successful_payment.total_amount
+    user_id = message.from_user.id
 
     if payload.startswith("sponsor_"):
         await process_sponsor_payment(message, bot, payload)
+        # Записываем в аналитику (определяем 7 или 30 дней по сумме или пейлоаду)
+        # Для простоты можно писать просто 'sponsor'
+        await add_transaction(user_id, amount, "sponsor")
 
     elif payload.startswith("slot_"):
         await process_slot_payment(message, payload)
+        await add_transaction(user_id, amount, "slot")
 
     # ВОТ ЭТОТ БЛОК НУЖНО ДОБАВИТЬ:
     elif payload.startswith("boost_"):
         await process_boost_payment(message, payload)
+        await add_transaction(user_id, amount, "boost")
 
 
 # --- Логика начисления СЛОТА ---
