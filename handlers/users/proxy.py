@@ -170,11 +170,22 @@ async def handle_vote(callback: types.CallbackQuery, bot: Bot):
     proxy = await get_proxy_by_id(proxy_id)
     bot_info = await bot.get_me()
 
-    # Снова та же функция!
-    text = get_public_proxy_text(proxy, bot_info.username)
-    markup = get_proxy_vote_keyboard(proxy.id, proxy.url, proxy.likes, proxy.dislikes)
+    # ИСПРАВЛЕНИЕ 1: Вызываем правильную функцию для текста.
+    # Ставим is_viewed=True, так как человек уже видит этот прокси, раз голосует
+    text = get_proxy_card_text(proxy, bot_info.username, is_direct_link=False, is_viewed=True)
+
+    # ИСПРАВЛЕНИЕ 2: Передаем bot_username в генератор клавиатуры
+    markup = get_proxy_vote_keyboard(
+        proxy_id=proxy.id,
+        url=proxy.url,
+        likes=proxy.likes,
+        dislikes=proxy.dislikes,
+        bot_username=bot_info.username,
+        show_replace=True
+    )
 
     try:
         await callback.message.edit_text(text, reply_markup=markup, disable_web_page_preview=True)
-    except Exception:
-        pass
+    except Exception as e:
+        # Убрали pass и добавили print, чтобы больше не ловить "невидимые" ошибки
+        print(f"Ошибка при обновлении интерфейса лайка: {e}")

@@ -36,29 +36,35 @@ async def get_best_proxy(user_id: int, exclude_id: int = None, is_replace: bool 
             query = query.where(Proxy.id != exclude_id)
 
         if not is_replace:
-            # 🚀 ГЛАВНАЯ КНОПКА (Промо решают)
+            # 🚀 ГЛАВНАЯ КНОПКА (Витрина и Реклама)
             query = query.order_by(
+                # 1. Сначала отделяем мусор, промо и обычные
                 case(
-                    (Vote.is_upvote == False, 4),
-                    (and_(Proxy.boost_until > now, ProxyView.id.is_(None)), 0),
-                    (and_(Proxy.boost_until > now, ProxyView.id.is_not(None)), 1),
-                    (ProxyView.id.is_(None), 2),
-                    else_=3
+                    (Vote.is_upvote == False, 2), # Дизлайки всегда на дне
+                    (Proxy.boost_until > now, 0), # ПРОМО на самом верху
+                    else_=1                       # Обычные сервера посередине
                 ),
-                # МАГИЯ ТУТ: Сначала старые просмотры, потом рейтинг
-                ProxyView.viewed_at.asc(),
+                # 2. МАГИЯ ДЛЯ РЕКЛАМОДАТЕЛЕЙ: Рандомная ротация ПРОМО-серверов
+                # func.random() перемешивает только 0-й уровень (Промо), давая всем равные показы
+                case(
+                    (Proxy.boost_until > now, func.random()),
+                    else_=0
+                ),
+                # 3. МАГИЯ ДЛЯ ЮЗЕРОВ: Если Промо нет, выдаем АБСОЛЮТНЫЙ ТОП-1 по качеству
                 Proxy.score.desc()
             )
         else:
-            # 🔄 КНОПКА ЗАМЕНЫ (Просто дай лучший сервер)
+            # 🔄 КНОПКА ЗАМЕНЫ (Поиск лучшего коннекта)
             query = query.order_by(
+                # 1. Здесь нам плевать на Промо. Ищем новые для юзера сервера.
                 case(
                     (Vote.is_upvote == False, 2),
-                    (ProxyView.id.is_(None), 0),
-                    else_=1
+                    (ProxyView.id.is_(None), 0),  # Сначала те, что еще НЕ видел
+                    else_=1                       # Если новых нет, берем старые
                 ),
-                # МАГИЯ ТУТ: Круговая карусель для просмотренных
+                # 2. Карусель для просмотренных (чтобы не было эффекта пинг-понга между двумя)
                 ProxyView.viewed_at.asc(),
+                # 3. Внутри новых серверов всегда отдаем самый лучший по рейтингу
                 Proxy.score.desc()
             )
 
