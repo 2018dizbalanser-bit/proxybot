@@ -88,11 +88,12 @@ async def start_command(message: types.Message, command: CommandObject, bot: Bot
             ref_name = args
             await increment_ad_click(ref_name)
 
-    # Добавляем или обновляем пользователя в БД (с учетом ref_name)
+    # Добавляем или обновляем пользователя в БД (с учетом ref_name и premium)
     await add_user(
         tg_id=message.from_user.id,
         username=message.from_user.username,
-        ref_name=ref_name
+        ref_name=ref_name,
+        is_premium=message.from_user.is_premium or False  # <--- Передаем статус из Telegram
     )
 
     # Стандартное меню (если пришел без ссылки или по рекламной)

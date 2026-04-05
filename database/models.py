@@ -14,6 +14,8 @@ class User(Base):
     username: Mapped[str | None] = mapped_column(String(50), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    is_premium: Mapped[bool] = mapped_column(Boolean, default=False, server_default='0')
+
     proxy_limit: Mapped[int] = mapped_column(default=3, server_default='3')
     ref_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
 

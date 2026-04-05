@@ -3,19 +3,34 @@ from database.connect import async_session
 from database.models import User, Channel, Proxy, Vote, AdLink
 
 
-async def add_user(tg_id: int, username: str | None = None, ref_name: str | None = None):
+async def add_user(tg_id: int, username: str | None = None, ref_name: str | None = None, is_premium: bool = False):
     async with async_session() as session:
         result = await session.execute(select(User).where(User.tg_id == tg_id))
         user = result.scalar_one_or_none()
 
         if not user:
-            new_user = User(tg_id=tg_id, username=username, is_active=True, ref_name=ref_name)
+            # Создаем нового пользователя с учетом премиума
+            new_user = User(
+                tg_id=tg_id,
+                username=username,
+                is_active=True,
+                ref_name=ref_name,
+                is_premium=is_premium  # <--- Записываем статус
+            )
             session.add(new_user)
         else:
             user.is_active = True
+
+            # Обновляем юзернейм, если он поменялся
             if user.username != username:
                 user.username = username
+
+            # Обновляем премиум-статус (вдруг он его купил или потерял)
+            if user.is_premium != is_premium:
+                user.is_premium = is_premium
+
             # Если юзер уже был, но перешел по новой рефке, мы не перезаписываем его первый источник
+
         await session.commit()
 
 

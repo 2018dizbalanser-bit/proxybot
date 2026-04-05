@@ -23,27 +23,32 @@ async def handle_unknown_text(message: types.Message):
         stats = await get_ad_link_stats(ref_name)
 
         if stats:
-            # Выводим дизайн админки
+            interacted_blocked = stats['interacted_total'] - stats['interacted_active']
+
             stats_text = (
-                f"📊 <b>Статистика рекламной кампании</b>\n"
-                f"🏷 Метка: <code>{stats['name']}</code>\n"
-                f"📅 Создана: {stats['created_at'].strftime('%d.%m.%Y')}\n\n"
-                f"🔗 Всего переходов (кликов): <b>{stats['clicks']}</b>\n\n"
-                f"👥 <b>Конверсия пользователей:</b>\n"
-                f"Всего зашло в бота: <b>{stats['total']}</b>\n"
-                f"🟢 Живых (активных): <b>{stats['active']}</b>\n"
-                f"🔴 Удалили бота: <b>{stats['blocked']}</b>\n\n"
-                f"📈 <b>Динамика прихода:</b>\n"
-                f"Сегодня: <b>+{stats['today']}</b>\n"
-                f"Вчера: <b>+{stats['yesterday']}</b>\n"
-                f"За неделю: <b>+{stats['week']}</b>\n"
-                f"За месяц: <b>+{stats['month']}</b>"
+                f"📈 <b>Статистика:</b> <code>{stats['name']}</code>\n"
+                f"🕒 Запущена {stats['created_at'].strftime('%d.%m.%Y')}\n\n"
+
+                f"👥 <b>Привлеченная аудитория:</b>\n"
+                f"• Пришло в бота: <b>{stats['total']}</b> (из {stats['clicks']} кликов)\n"
+                f"• Премиум-юзеров: <b>{stats['premium_percent']}%</b> ⭐️\n\n"
+
+                f"🎯 <b>Целевые действия:</b>\n"
+                f"• Нажали старт: <b>{stats['total']}</b>\n"
+                f"• Взяли минимум 1 прокси: <b>{stats['interacted_total']}</b>\n\n"
+
+                f"📊 <b>Удержание (Retention):</b>\n"
+                f"• Живых из тех, кто нажал старт: <b>{stats['active']}</b> из {stats['total']}\n"
+                f"• Живых из тех, кто брал прокси: <b>{stats['interacted_active']}</b> из {stats['interacted_total']}\n\n"
+
+                f"📅 <b>Прирост:</b> День: +{stats['today']} | Неделя: +{stats['week']} | Месяц: +{stats['month']}"
             )
             await message.answer(stats_text)
             return
 
         else:
             if message.from_user.id in ADMIN_IDS:
+                # Если у тебя функция создания ссылки называется по-другому, подправь тут
                 await create_ad_link(ref_name)
                 await message.answer(
                     f"✅ <b>Рекламная ссылка создана!</b>\n\n"
