@@ -266,13 +266,14 @@ async def create_ad_link(name: str):
         await session.commit()
 
 async def increment_ad_click(name: str):
-    """Увеличивает счетчик ВСЕХ кликов по ссылке"""
+    """Увеличивает счетчик ВСЕХ кликов по ссылке (Атомарно, без потери данных!)"""
     async with async_session() as session:
-        result = await session.execute(select(AdLink).where(AdLink.name == name))
-        ad_link = result.scalar_one_or_none()
-        if ad_link:
-            ad_link.clicks += 1
-            await session.commit()
+        await session.execute(
+            update(AdLink)
+            .where(AdLink.name == name)
+            .values(clicks=AdLink.clicks + 1) # База сама прибавит +1 на своей стороне
+        )
+        await session.commit()
 
 
 async def get_ad_link_stats(ref_name: str) -> dict:
