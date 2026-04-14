@@ -11,6 +11,7 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     tg_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    language: Mapped[str] = mapped_column(String(5), default='ru', server_default='ru')
     username: Mapped[str | None] = mapped_column(String(50), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 

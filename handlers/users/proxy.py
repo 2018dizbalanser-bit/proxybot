@@ -5,14 +5,14 @@ from aiogram import Router, F, types, Bot
 from database.requests.add import add_or_update_vote
 from database.requests.get import get_all_channels, get_best_proxy, get_proxy_by_id, mark_proxy_viewed, check_if_viewed
 from keyboards.inline import get_subscription_keyboard, get_proxy_control_keyboard, get_proxy_vote_keyboard
-from utils.ping import parse_proxy_url
+from utils.i18n import all_values
 from utils.subscription import get_unsubscribed_channels
-from utils.texts import get_public_proxy_text, get_proxy_card_text
+from utils.texts import get_proxy_card_text
 
 router = Router()
 
 
-@router.message(F.text == "🚀 Получить прокси")
+@router.message(F.text.in_(all_values('btn_get_proxy')))
 async def get_proxy_handler(message: types.Message, bot: Bot):
     channels = await get_all_channels()
 

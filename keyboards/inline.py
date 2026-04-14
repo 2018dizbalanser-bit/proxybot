@@ -3,7 +3,6 @@ import urllib
 from aiogram import types
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from utils.ping import parse_proxy_url
 
 
 # админские кнопки
@@ -192,7 +191,7 @@ def get_my_proxies_keyboard(proxies):
 
 # Добавили is_boosted: bool = False
 def get_proxy_manage_keyboard(proxy_id: int, has_sponsor: bool = False, is_public: bool = True,
-                              is_boosted: bool = False):
+                              is_boosted: bool = False, lang: str = 'ru'):
     builder = InlineKeyboardBuilder()
 
     # МЕНЯЕМ КНОПКУ БУСТА В ЗАВИСИМОСТИ ОТ СТАТУСА
@@ -211,7 +210,7 @@ def get_proxy_manage_keyboard(proxy_id: int, has_sponsor: bool = False, is_publi
     builder.button(text=visibility_text, callback_data=f"toggle_public_{proxy_id}")
 
     builder.button(text="🗑 Удалить", callback_data=f"user_delete_prx_{proxy_id}")
-    builder.button(text="🔙 К списку", callback_data="my_proxies")
+    builder.button(text=t('btn_back_to_list', lang), callback_data="my_proxies")
 
     builder.adjust(1, 1, 2, 1)
     return builder.as_markup()

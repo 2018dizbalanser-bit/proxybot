@@ -15,6 +15,15 @@ def main_keyboard():
     return builder.as_markup(resize_keyboard=True)
 
 
+def proxy_keyboard(lang: str = 'ru'):
+    builder = ReplyKeyboardBuilder()
+    builder.button(text=t('btn_other_proxy', lang))
+    builder.button(text=t('btn_home_menu', lang))
+    builder.adjust(1, 1)
+    return builder.as_markup(resize_keyboard=True)
+
+
+
 def proxy_actions_kb():
     builder = ReplyKeyboardBuilder()
 

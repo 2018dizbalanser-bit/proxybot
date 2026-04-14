@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[codz]
+.venv/
+venv/
+env/
+
+# Секреты
+.env
+
+# База данных
+*.db
+*.db-shm
+*.db-wal
+database/database.db
+
+# IDE (PyCharm, VSCode)
+.idea/
+.vscode/

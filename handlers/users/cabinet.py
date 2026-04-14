@@ -11,6 +11,7 @@ from database.requests.get import get_user_proxies, get_proxy_by_id, get_user, g
 from database.requests.delete import delete_proxy_db
 from keyboards.inline import get_cabinet_main_keyboard, get_my_proxies_keyboard, get_proxy_manage_keyboard, \
     get_limit_reached_keyboard, get_sponsor_tariffs_keyboard, get_liked_proxies_keyboard
+from utils.i18n import all_values
 from utils.ping import ping_proxy, parse_proxy_url
 
 router = Router()
@@ -57,7 +58,7 @@ async def _render_main_cabinet(user: types.User, send_method):
     await send_method(text, reply_markup=get_cabinet_main_keyboard())
 
 
-@router.message(F.text == "👤 Личный кабинет")
+@router.message(F.text.in_(all_values('btn_cabinet')))
 async def show_cabinet_msg(message: types.Message):
     await _render_main_cabinet(message.from_user, message.answer)
 
