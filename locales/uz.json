@@ -129,5 +129,8 @@
   "feature_wip": "🛠 Bu funksiya ishlab chiqilmoqda va tez orada paydo bo'ladi!",
 
   "language_choose": "🌐 <b>Выберите язык / Choose language:</b>",
-  "language_set": "✅ Til muvaffaqiyatli <b>O'zbek</b> ga o'zgartirildi."
+  "language_set": "✅ Til muvaffaqiyatli <b>O'zbek</b> ga o'zgartirildi.",
+
+  "btn_main_menu": "🔝 Asosiy menyu"
+
 }

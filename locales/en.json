@@ -129,6 +129,21 @@
   "btn_lang_uz": "🇺🇿 O'zbek",
   "btn_lang_ur": "🇵🇰 اردو",
   "btn_lang_hi": "🇮🇳 हिन्दी",
-  "btn_lang_id": "🇮🇩 Indonesia"
+  "btn_lang_id": "🇮🇩 Indonesia",
+
+  "btn_main_menu": "🔝 Main menu",
+  "vote_counted": "✅ Your vote has been counted!",
+  "vote_changed": "✅ Your vote has been changed!",
+  "vote_already_voted": "⚠️ You've already voted this way!",
+  "vote_proxy_not_found": "❌ Proxy not found.",
+
+  "btn_extend_op": "📢 Renew mandatory sub",
+  "btn_extend_boost": "🚀 Extend Boost",
+
+  "worker_sponsor_expired": "🔔 <b>Mandatory Subscription expired!</b>\n\nThe channel link for your proxy <b>#{proxy_id}</b> has ended. Users are no longer required to subscribe to your channel.\n\n👇 Press the button below to resume traffic conversion:",
+  "worker_boost_expired": "📉 <b>Boost expired!</b>\n\nYour proxy <b>#{proxy_id}</b> has lost VIP status and returned to the general queue.\n\n👇 Press the button below to boost it to the TOP again:",
+  "worker_proxy_dead": "🚨 <b>Your proxy stopped working!</b>\n\n💀 It's not responding (3 attempts in a row) and was temporarily removed from the catalog:\n🌐 <code>{short_url}</code>\n\n🔧 <i>Please check your server.</i>"
+
+
 
 }

@@ -129,5 +129,8 @@
   "feature_wip": "🛠 Bu özellik geliştirme aşamasında, yakında kullanıma açılacak!",
 
   "language_choose": "🌐 <b>Выберите язык / Choose language:</b>",
-  "language_set": "✅ Dil başarıyla <b>Türkçe</b> olarak değiştirildi."
+  "language_set": "✅ Dil başarıyla <b>Türkçe</b> olarak değiştirildi.",
+
+  "btn_main_menu": "🔝 Ana menü"
+
 }

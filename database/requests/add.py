@@ -3,35 +3,32 @@ from database.connect import async_session
 from database.models import User, Channel, Proxy, Vote, AdLink
 
 
-async def add_user(tg_id: int, username: str | None = None, ref_name: str | None = None, is_premium: bool = False):
+async def add_user(tg_id: int, username: str | None = None, ref_name: str | None = None,
+                   is_premium: bool = False, language: str = 'ru'):
     async with async_session() as session:
         result = await session.execute(select(User).where(User.tg_id == tg_id))
         user = result.scalar_one_or_none()
 
         if not user:
-            # Создаем нового пользователя с учетом премиума
             new_user = User(
                 tg_id=tg_id,
                 username=username,
                 is_active=True,
                 ref_name=ref_name,
-                is_premium=is_premium  # <--- Записываем статус
+                is_premium=is_premium,
+                language=language        # <--- сохраняем определённый язык
             )
             session.add(new_user)
         else:
             user.is_active = True
-
-            # Обновляем юзернейм, если он поменялся
             if user.username != username:
                 user.username = username
-
-            # Обновляем премиум-статус (вдруг он его купил или потерял)
             if user.is_premium != is_premium:
                 user.is_premium = is_premium
-
-            # Если юзер уже был, но перешел по новой рефке, мы не перезаписываем его первый источник
+            # язык существующего пользователя НЕ перезаписываем
 
         await session.commit()
+
 
 
 async def add_channel(channel_id: int, title: str, url: str):
@@ -49,15 +46,12 @@ async def add_proxy(url: str):
 # from database.models import User, Channel, Proxy, Vote
 
 async def add_or_update_vote(user_id: int, proxy_id: int, is_upvote: bool, is_premium: bool) -> tuple[bool, str]:
-    """
-    Возвращает (успех: bool, сообщение: str)
-    """
+    """Возвращает (успех: bool, ключ перевода: str)"""
     async with async_session() as session:
         proxy = await session.get(Proxy, proxy_id)
         if not proxy:
-            return False, "❌ Прокси не найден."
+            return False, "vote_proxy_not_found"
 
-        # Ищем, голосовал ли уже этот юзер за этот прокси
         result = await session.execute(
             select(Vote).where(Vote.user_id == user_id, Vote.proxy_id == proxy_id)
         )
@@ -65,10 +59,8 @@ async def add_or_update_vote(user_id: int, proxy_id: int, is_upvote: bool, is_pr
 
         if vote:
             if vote.is_upvote == is_upvote:
-                return False, "⚠️ Вы уже проголосовали так же!"
+                return False, "vote_already_voted"
 
-            # Юзер решил изменить голос (например, с лайка на дизлайк)
-            # Отменяем старые счетчики
             if vote.is_upvote:
                 proxy.likes -= 1
                 if vote.is_premium: proxy.premium_likes -= 1
@@ -76,9 +68,8 @@ async def add_or_update_vote(user_id: int, proxy_id: int, is_upvote: bool, is_pr
                 proxy.dislikes -= 1
                 if vote.is_premium: proxy.premium_dislikes -= 1
 
-            # Применяем новые счетчики
             vote.is_upvote = is_upvote
-            vote.is_premium = is_premium  # Обновляем статус премиума (вдруг он его купил)
+            vote.is_premium = is_premium
             if is_upvote:
                 proxy.likes += 1
                 if is_premium: proxy.premium_likes += 1
@@ -86,9 +77,8 @@ async def add_or_update_vote(user_id: int, proxy_id: int, is_upvote: bool, is_pr
                 proxy.dislikes += 1
                 if is_premium: proxy.premium_dislikes += 1
 
-            msg = "✅ Ваш голос изменен!"
+            msg_key = "vote_changed"
         else:
-            # Юзер голосует впервые
             new_vote = Vote(user_id=user_id, proxy_id=proxy_id, is_upvote=is_upvote, is_premium=is_premium)
             session.add(new_vote)
 
@@ -99,7 +89,7 @@ async def add_or_update_vote(user_id: int, proxy_id: int, is_upvote: bool, is_pr
                 proxy.dislikes += 1
                 if is_premium: proxy.premium_dislikes += 1
 
-            msg = "✅ Ваш голос учтен!"
+            msg_key = "vote_counted"
 
         await session.commit()
-        return True, msg
+        return True, msg_key

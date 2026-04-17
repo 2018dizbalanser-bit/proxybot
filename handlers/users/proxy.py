@@ -4,8 +4,8 @@ from aiogram import Router, F, types, Bot
 
 from database.requests.add import add_or_update_vote
 from database.requests.get import get_all_channels, get_best_proxy, get_proxy_by_id, mark_proxy_viewed, check_if_viewed
-from keyboards.inline import get_subscription_keyboard, get_proxy_control_keyboard, get_proxy_vote_keyboard
-from utils.i18n import all_values
+from keyboards.inline import get_subscription_keyboard, get_proxy_vote_keyboard
+from utils.i18n import t, all_values
 from utils.subscription import get_unsubscribed_channels
 from utils.texts import get_proxy_card_text
 
@@ -13,50 +13,45 @@ router = Router()
 
 
 @router.message(F.text.in_(all_values('btn_get_proxy')))
-async def get_proxy_handler(message: types.Message, bot: Bot):
+async def get_proxy_handler(message: types.Message, bot: Bot, lang: str):
     channels = await get_all_channels()
-
-    # Получаем ТОЛЬКО те каналы, где юзера еще нет
     unsubscribed = await get_unsubscribed_channels(bot, message.from_user.id, channels)
 
     if unsubscribed:
         await message.answer(
-            "⚠️ <b>Для получения прокси необходимо подписаться на наших спонсоров:</b>\n\n"
-            "После подписки нажмите кнопку <i>«Проверить подписку»</i>.",
-            # Передаем в клавиатуру только недостающие каналы!
-            reply_markup=get_subscription_keyboard(unsubscribed)
+            t('proxy_subscribe_required', lang),
+            reply_markup=get_subscription_keyboard(unsubscribed, lang)
         )
     else:
         # Подписан на все (или обязательных каналов вообще нет)
+        # Переключаем reply-клавиатуру на действия с прокси
+        await message.answer("🎯 <i>Подбираю лучший сервер...</i>", reply_markup=proxy_actions_kb())
         # ЯВНО УКАЗЫВАЕМ is_replace=False (работает приоритет ПРОМО)
         await send_best_proxy(message, bot=bot, user_id=message.from_user.id, is_replace=False)
 
-
 @router.callback_query(F.data == "check_subscription")
-async def check_sub_handler(callback: types.CallbackQuery, bot: Bot):
+async def check_sub_handler(callback: types.CallbackQuery, bot: Bot, lang: str):
     channels = await get_all_channels()
     unsubscribed = await get_unsubscribed_channels(bot, callback.from_user.id, channels)
 
     if not unsubscribed:  # Список пуст, значит подписан на все!
         await callback.answer("✅ Подписка подтверждена!", show_alert=False)
+        # Переключаем reply-клавиатуру на действия с прокси
+        await callback.message.answer("🎯 <i>Подбираю лучший сервер...</i>", reply_markup=proxy_actions_kb())
         await send_best_proxy(callback.message, bot=bot, edit_message=True)
     else:
-        await callback.answer("❌ Вы подписались не на все каналы!", show_alert=True)
-        # КИЛЛЕР-ФИЧА: Обновляем клавиатуру!
-        # Если юзер подписался на 1 из 2 каналов, кнопка подписанного канала исчезнет.
+        await callback.answer(t('proxy_sub_not_all', lang), show_alert=True)
         await callback.message.edit_reply_markup(
-            reply_markup=get_subscription_keyboard(unsubscribed)
+            reply_markup=get_subscription_keyboard(unsubscribed, lang)
         )
 
 
-# --- Выдача лучшего прокси (Оптимизированная версия) ---
 async def send_best_proxy(message: types.Message, bot: Bot, user_id: int, edit_message: bool = False,
-                          exclude_id: int = None, is_replace: bool = False):
-    # 1. Получаем прокси с учетом источника запроса
+                          exclude_id: int = None, is_replace: bool = False, lang: str = 'ru'):
     proxy = await get_best_proxy(user_id, exclude_id, is_replace)
 
     if not proxy:
-        text = "😔 <b>К сожалению, сейчас нет доступных рабочих прокси.</b>\nЗагляните немного позже!"
+        text = t('proxy_not_found', lang)
         if edit_message:
             await message.edit_text(text, reply_markup=None)
         else:
@@ -64,24 +59,18 @@ async def send_best_proxy(message: types.Message, bot: Bot, user_id: int, edit_m
         return
 
     bot_info = await bot.get_me()
-
-    # 2. Проверяем статус ДО добавления в просмотры
     is_already_seen = await check_if_viewed(user_id, proxy.id)
-
-    # 3. Фиксируем просмотр ПРЯМО СЕЙЧАС
     await mark_proxy_viewed(user_id, proxy.id)
 
-    # Формируем текст и клавиатуру
-    text = get_proxy_card_text(proxy, bot_info.username, is_viewed=is_already_seen)
-
-    # (Вызов твоей новой клавиатуры с кнопкой "Поделиться")
+    text = get_proxy_card_text(proxy, bot_info.username, is_viewed=is_already_seen, lang=lang)
     markup = get_proxy_vote_keyboard(
         proxy_id=proxy.id,
         url=proxy.url,
         likes=proxy.likes,
         dislikes=proxy.dislikes,
         bot_username=bot_info.username,
-        show_replace=True
+        show_replace=True,
+        lang=lang
     )
 
     if edit_message:
@@ -94,8 +83,7 @@ async def send_best_proxy(message: types.Message, bot: Bot, user_id: int, edit_m
 
 
 @router.callback_query(F.data.startswith("replace_proxy_"))
-async def replace_proxy_handler(callback: types.CallbackQuery, bot: Bot):
-    # Достаем ID прокси, который сейчас видит юзер
+async def replace_proxy_handler(callback: types.CallbackQuery, bot: Bot, lang: str):
     proxy_id = int(callback.data.split("_")[2])
 
     try:
@@ -108,84 +96,70 @@ async def replace_proxy_handler(callback: types.CallbackQuery, bot: Bot):
     except Exception:
         pass
 
-    # Вызываем финальную выдачу
-    # ВАЖНО: edit_message=False, так как мы уже удалили старое сообщение выше!
-    # is_replace=True отключает агрессивную выдачу промо
     await send_best_proxy(
         message=callback.message,
         bot=bot,
         user_id=callback.from_user.id,
         edit_message=False,
         exclude_id=proxy_id,
-        is_replace=True
+        is_replace=True,
+        lang=lang
     )
     await callback.answer()
 
 
-# --- Выдача конкретного прокси (по реф-ссылке) ---
-# Добавили bot: Bot в аргументы!
-async def send_specific_proxy(message: types.Message, proxy_id: int, bot: Bot):
-    """Выдача конкретного прокси (при переходе по реф-ссылке)"""
+async def send_specific_proxy(message: types.Message, proxy_id: int, bot: Bot, lang: str = 'ru'):
     proxy = await get_proxy_by_id(proxy_id)
 
     if not proxy or not proxy.is_active:
-        await message.answer("😔 <b>Этот прокси больше недоступен.</b>")
+        await message.answer(t('proxy_unavailable', lang))
         return
 
     bot_info = await bot.get_me()
-
-    # Формируем текст (is_direct_link=True убирает плашки статуса)
-    text = get_proxy_card_text(proxy, bot_info.username, is_direct_link=True, is_viewed=False)
-
-    # Формируем клавиатуру (ОБЯЗАТЕЛЬНО ПЕРЕДАЕМ bot_username!)
-    # show_replace=False скрывает кнопку "Другой прокси", т.к. юзер пришел за конкретным
+    text = get_proxy_card_text(proxy, bot_info.username, is_direct_link=True, is_viewed=False, lang=lang)
     markup = get_proxy_vote_keyboard(
         proxy_id=proxy.id,
         url=proxy.url,
         likes=proxy.likes,
         dislikes=proxy.dislikes,
         bot_username=bot_info.username,
-        show_replace=False
+        show_replace=False,
+        lang=lang
     )
-
     await message.answer(text, reply_markup=markup, disable_web_page_preview=True)
 
 
-# --- Обработка лайков / дизлайков ---
 @router.callback_query(F.data.startswith("vote_"))
-async def handle_vote(callback: types.CallbackQuery, bot: Bot):
+async def handle_vote(callback: types.CallbackQuery, bot: Bot, lang: str):
     parts = callback.data.split("_")
     proxy_id = int(parts[1])
     is_upvote = parts[2] == "up"
     is_premium = callback.from_user.is_premium or False
 
-    success, msg = await add_or_update_vote(callback.from_user.id, proxy_id, is_upvote, is_premium)
+    success, msg_key = await add_or_update_vote(callback.from_user.id, proxy_id, is_upvote, is_premium)
 
     if not success:
-        await callback.answer(msg, show_alert=True)
+        await callback.answer(t(msg_key, lang), show_alert=True)
         return
 
-    await callback.answer(msg)
+    await callback.answer(t(msg_key, lang))
 
     proxy = await get_proxy_by_id(proxy_id)
     bot_info = await bot.get_me()
 
-    # ИСПРАВЛЕНИЕ 1: Вызываем правильную функцию для текста.
-    # Ставим is_viewed=True, так как человек уже видит этот прокси, раз голосует
-    text = get_proxy_card_text(proxy, bot_info.username, is_direct_link=False, is_viewed=True)
-
-    # ИСПРАВЛЕНИЕ 2: Передаем bot_username в генератор клавиатуры
+    text = get_proxy_card_text(proxy, bot_info.username, is_direct_link=False, is_viewed=True, lang=lang)
     markup = get_proxy_vote_keyboard(
         proxy_id=proxy.id,
         url=proxy.url,
         likes=proxy.likes,
         dislikes=proxy.dislikes,
         bot_username=bot_info.username,
-        show_replace=True
+        show_replace=True,
+        lang=lang
     )
 
     try:
         await callback.message.edit_text(text, reply_markup=markup, disable_web_page_preview=True)
     except Exception as e:
-        # Убрали pass и добавили print, чтобы больше не ловить "невидимые" ошибки
         print(f"Ошибка при обновлении интерфейса лайка: {e}")
+

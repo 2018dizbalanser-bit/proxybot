@@ -27,3 +27,11 @@ def t(key: str, lang: str = 'ru', **kwargs) -> str:
 
 def all_values(key: str) -> set:
     return {tr[key] for tr in _translations.values() if key in tr}
+
+
+def detect_lang(tg_language_code: str | None) -> str:
+    """Определяет язык из Telegram language_code, fallback — 'ru'."""
+    if not tg_language_code:
+        return 'ru'
+    code = tg_language_code.split('-')[0].lower()
+    return code if code in _translations else 'ru'

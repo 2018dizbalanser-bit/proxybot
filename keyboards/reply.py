@@ -1,40 +1,19 @@
 from aiogram import types
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
+from utils.i18n import t
 
 
-def main_keyboard():
+def main_keyboard(lang: str = 'ru'):
     builder = ReplyKeyboardBuilder()
-
-    # Твоя текущая кнопка (возможно она называется иначе, оставь свою)
-    builder.button(text="🚀 Получить прокси")
-
-    # НОВАЯ КНОПКА
-    builder.button(text="👤 Личный кабинет")
-
-    builder.adjust(1, 1)  # По одной кнопке в ряд
+    builder.button(text=t('btn_get_proxy', lang))
+    builder.button(text=t('btn_cabinet', lang))
+    builder.adjust(1, 1)
     return builder.as_markup(resize_keyboard=True)
 
 
 def proxy_keyboard(lang: str = 'ru'):
     builder = ReplyKeyboardBuilder()
     builder.button(text=t('btn_other_proxy', lang))
-    builder.button(text=t('btn_home_menu', lang))
+    builder.button(text=t('btn_main_menu', lang))
     builder.adjust(1, 1)
     return builder.as_markup(resize_keyboard=True)
-
-
-
-def proxy_actions_kb():
-    builder = ReplyKeyboardBuilder()
-
-    builder.row(
-        types.KeyboardButton(text="🔄 Другой прокси")
-    )
-    builder.row(
-        types.KeyboardButton(text="🔝 Главное меню")
-    )
-
-    return builder.as_markup(
-        resize_keyboard=True,
-        input_field_placeholder="Выберите действие:"
-    )

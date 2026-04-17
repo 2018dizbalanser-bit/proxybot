@@ -129,5 +129,8 @@
   "feature_wip": "🛠 Fitur ini sedang dalam pengembangan dan akan segera tersedia!",
 
   "language_choose": "🌐 <b>Выберите язык / Choose language:</b>",
-  "language_set": "✅ Bahasa berhasil diubah ke <b>Indonesia</b>."
+  "language_set": "✅ Bahasa berhasil diubah ke <b>Indonesia</b>.",
+
+  "btn_main_menu": "🔝 Menu utama"
+
 }

@@ -3,6 +3,7 @@ from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from database.requests.update import update_user_language
+from keyboards.reply import main_keyboard
 from utils.i18n import t
 
 router = Router()
@@ -56,4 +57,4 @@ async def set_language_handler(callback: types.CallbackQuery):
 
     await update_user_language(callback.from_user.id, lang_code)
     await callback.answer()
-    await callback.message.answer(t('language_set', lang_code))
+    await callback.message.answer(t('language_set', lang_code), reply_markup=main_keyboard(lang_code))

@@ -7,11 +7,11 @@ from database.requests.add import add_user
 from database.requests.get import get_proxy_by_id, increment_ad_click
 from keyboards.reply import main_keyboard
 from handlers.users.proxy import send_specific_proxy
+from utils.i18n import t, detect_lang
 
 router = Router()
 
 
-# --- Вспомогательная функция для проверки подписки ---
 async def check_user_subscription(bot: Bot, user_id: int, channel_id: int) -> bool:
     try:
         member = await bot.get_chat_member(chat_id=channel_id, user_id=user_id)
@@ -21,15 +21,14 @@ async def check_user_subscription(bot: Bot, user_id: int, channel_id: int) -> bo
 
 
 @router.message(CommandStart())
-async def start_command(message: types.Message, command: CommandObject, bot: Bot):
+async def start_command(message: types.Message, command: CommandObject, bot: Bot, lang: str):
     args = command.args
     ref_name = None
 
-    # Обработка аргументов (прокси или реклама)
     if args:
         if args.startswith("prx_"):
             loading_msg = await message.answer(
-                "🔄 <i>Проверяю информацию о сервере...</i>",
+                t('start_checking_server', lang),
                 reply_markup=types.ReplyKeyboardRemove()
             )
 
@@ -40,8 +39,8 @@ async def start_command(message: types.Message, command: CommandObject, bot: Bot
                 if not proxy or not proxy.is_active:
                     await loading_msg.delete()
                     await message.answer(
-                        "😔 <b>Этот прокси больше недоступен или был удален владельцем.</b>\nВоспользуйтесь кнопкой ниже, чтобы найти другой рабочий сервер.",
-                        reply_markup=main_keyboard()
+                        t('start_proxy_unavailable', lang),
+                        reply_markup=main_keyboard(lang)
                     )
                     return
 
@@ -51,88 +50,73 @@ async def start_command(message: types.Message, command: CommandObject, bot: Bot
                     if not is_subscribed:
                         await loading_msg.delete()
                         builder = InlineKeyboardBuilder()
-                        builder.row(types.InlineKeyboardButton(text="📢 Подписаться на Спонсора", url=proxy.sponsor_channel_url))
-                        builder.row(types.InlineKeyboardButton(text="✅ Проверить подписку", callback_data=f"check_sponsor_{proxy_id}"))
-
+                        builder.row(types.InlineKeyboardButton(
+                            text=t('btn_subscribe_sponsor', lang),
+                            url=proxy.sponsor_channel_url
+                        ))
+                        builder.row(types.InlineKeyboardButton(
+                            text=t('btn_check_subscription', lang),
+                            callback_data=f"check_sponsor_{proxy_id}"
+                        ))
                         await message.answer(
-                            "🛑 <b>Обязательная подписка!</b>\n\n"
-                            "Чтобы получить доступ к этому приватному прокси-серверу, вы должны быть подписаны на канал спонсора сервера.\n\n"
-                            "<i>Подпишитесь и нажмите «Проверить подписку» 👇</i>",
+                            t('start_sponsor_required', lang),
                             reply_markup=builder.as_markup()
                         )
                         return
 
                 await loading_msg.delete()
-                await message.answer(f"Нажмите «Подключиться», чтобы добавить его в Telegram. 👇", reply_markup=main_keyboard())
+                await message.answer(t('start_click_to_connect', lang), reply_markup=main_keyboard(lang))
                 await send_specific_proxy(message, proxy_id, bot)
                 return
 
-
             except Exception as e:
-
-                # Теперь бот не будет падать из-за двойного удаления
-
-                # и мы увидим настоящую ошибку в консоли, если она случится!
-
                 print(f"Ошибка при выдаче прокси по ссылке: {e}")
-
                 try:
-
                     await loading_msg.delete()
-
                 except Exception:
-
                     pass
         else:
-            # Это рекламная метка
             ref_name = args
             await increment_ad_click(ref_name)
 
-    # Добавляем или обновляем пользователя в БД (с учетом ref_name и premium)
+    # Для новых пользователей используем язык из Telegram,
+    # для вернувшихся — middleware уже поставил правильный lang из БД
+    detected_lang = detect_lang(message.from_user.language_code)
+    effective_lang = lang if lang != 'ru' else detected_lang
+
     await add_user(
         tg_id=message.from_user.id,
         username=message.from_user.username,
         ref_name=ref_name,
-        is_premium=message.from_user.is_premium or False  # <--- Передаем статус из Telegram
+        is_premium=message.from_user.is_premium or False,
+        language=detected_lang
     )
 
-    # Стандартное меню (если пришел без ссылки или по рекламной)
     if not args or not args.startswith("prx_"):
-        text = (f"<b>Привет, {message.from_user.first_name}!</b> 👋\n\n"
-                f"Я — умный каталог MTProto-прокси. Выдаю сервера, которые не тормозят!\n\n"
-                f"⚡️ <b>Что я умею:</b>\n"
-                f"• <b>Честный рейтинг:</b> топ формируют лайки (👍/👎) пользователей.\n"
-                f"• <b>Никаких лагов:</b> регулярно проверяю пинг всех прокси в системе.\n"
-                f"• <b>Продвижение:</b> добавь свой прокси в личном кабинете и бесплатно получай подписчиков на свой спонсорский канал!\n\n"
-                f"👇 Нажимай кнопку в меню, чтобы начать:")
-
-        await message.answer(text, reply_markup=main_keyboard())
+        await message.answer(
+            t('start_greeting', effective_lang, name=message.from_user.first_name),
+            reply_markup=main_keyboard(effective_lang)
+        )
 
 
-# --- Хендлер кнопки "Проверить подписку" ---
 @router.callback_query(F.data.startswith("check_sponsor_"))
-async def check_sponsor_callback(callback: types.CallbackQuery, bot: Bot):
+async def check_sponsor_callback(callback: types.CallbackQuery, bot: Bot, lang: str):
     proxy_id = int(callback.data.split("_")[2])
     proxy = await get_proxy_by_id(proxy_id)
 
     if not proxy or not proxy.sponsor_channel_id or proxy.sponsor_until < datetime.utcnow():
-        await callback.answer("Спонсор больше не актуален, выдаю прокси!", show_alert=True)
+        await callback.answer(t('proxy_sponsor_expired', lang), show_alert=True)
         await callback.message.delete()
-        await callback.message.answer("✅ <b>Доступ разрешен!</b>\n<i>Главное меню бота доступно внизу 👇</i>",
-                                      reply_markup=main_keyboard())
+        await callback.message.answer(t('proxy_access_granted', lang), reply_markup=main_keyboard(lang))
         await send_specific_proxy(callback.message, proxy_id, bot)
         return
 
     is_subscribed = await check_user_subscription(bot, callback.from_user.id, proxy.sponsor_channel_id)
 
     if is_subscribed:
-        await callback.answer("✅ Подписка подтверждена!", show_alert=True)
+        await callback.answer(t('proxy_sub_confirmed', lang), show_alert=True)
         await callback.message.delete()
-
-        # Возвращаем главное меню после успешной подписки
-        await callback.message.answer("✅ <b>Подписка подтверждена!</b>\n<i>Главное меню бота доступно внизу 👇</i>",
-                                      reply_markup=main_keyboard())
+        await callback.message.answer(t('proxy_sub_confirmed_full', lang), reply_markup=main_keyboard(lang))
         await send_specific_proxy(callback.message, proxy_id, bot)
     else:
-        await callback.answer("❌ Вы не подписались на канал! Пожалуйста, перейдите по ссылке и попробуйте снова.",
-                              show_alert=True)
+        await callback.answer(t('proxy_not_subscribed', lang), show_alert=True)
