@@ -30,11 +30,6 @@ def get_proxy_card_text(proxy: Proxy, bot_username: str, is_direct_link: bool = 
              proxy_id=proxy.id,
              badge_str=badge_str,
              host=display_host,
-             uptime=uptime,
-             likes=proxy.likes,
-             dislikes=proxy.dislikes)
-
-    if not is_direct_link:
-        text += t('proxy_card_tips', lang)
+             uptime=uptime)
 
     return text

@@ -1,10 +1,12 @@
 import asyncio
 
 from aiogram import Router, F, types, Bot
+from aiogram.fsm.context import FSMContext
 
 from database.requests.add import add_or_update_vote
 from database.requests.get import get_all_channels, get_best_proxy, get_proxy_by_id, mark_proxy_viewed, check_if_viewed
 from keyboards.inline import get_subscription_keyboard, get_proxy_vote_keyboard
+from keyboards.reply import proxy_keyboard, main_keyboard
 from utils.i18n import t, all_values
 from utils.subscription import get_unsubscribed_channels
 from utils.texts import get_proxy_card_text
@@ -13,7 +15,7 @@ router = Router()
 
 
 @router.message(F.text.in_(all_values('btn_get_proxy')))
-async def get_proxy_handler(message: types.Message, bot: Bot, lang: str):
+async def get_proxy_handler(message: types.Message, bot: Bot, lang: str, state: FSMContext):
     channels = await get_all_channels()
     unsubscribed = await get_unsubscribed_channels(bot, message.from_user.id, channels)
 
@@ -23,22 +25,23 @@ async def get_proxy_handler(message: types.Message, bot: Bot, lang: str):
             reply_markup=get_subscription_keyboard(unsubscribed, lang)
         )
     else:
-        # Подписан на все (или обязательных каналов вообще нет)
         # Переключаем reply-клавиатуру на действия с прокси
-        await message.answer("🎯 <i>Подбираю лучший сервер...</i>", reply_markup=proxy_actions_kb())
-        # ЯВНО УКАЗЫВАЕМ is_replace=False (работает приоритет ПРОМО)
-        await send_best_proxy(message, bot=bot, user_id=message.from_user.id, is_replace=False)
+        await message.answer("🎯 ...", reply_markup=proxy_keyboard(lang))
+        await send_best_proxy(message, bot=bot, user_id=message.from_user.id,
+                              is_replace=False, lang=lang, state=state)
+
 
 @router.callback_query(F.data == "check_subscription")
-async def check_sub_handler(callback: types.CallbackQuery, bot: Bot, lang: str):
+async def check_sub_handler(callback: types.CallbackQuery, bot: Bot, lang: str, state: FSMContext):
     channels = await get_all_channels()
     unsubscribed = await get_unsubscribed_channels(bot, callback.from_user.id, channels)
 
-    if not unsubscribed:  # Список пуст, значит подписан на все!
-        await callback.answer("✅ Подписка подтверждена!", show_alert=False)
+    if not unsubscribed:
+        await callback.answer(t('proxy_sub_confirmed', lang), show_alert=False)
         # Переключаем reply-клавиатуру на действия с прокси
-        await callback.message.answer("🎯 <i>Подбираю лучший сервер...</i>", reply_markup=proxy_actions_kb())
-        await send_best_proxy(callback.message, bot=bot, edit_message=True)
+        await callback.message.answer("🎯 ...", reply_markup=proxy_keyboard(lang))
+        await send_best_proxy(callback.message, bot=bot, user_id=callback.from_user.id,
+                              edit_message=True, lang=lang, state=state)
     else:
         await callback.answer(t('proxy_sub_not_all', lang), show_alert=True)
         await callback.message.edit_reply_markup(
@@ -47,7 +50,8 @@ async def check_sub_handler(callback: types.CallbackQuery, bot: Bot, lang: str):
 
 
 async def send_best_proxy(message: types.Message, bot: Bot, user_id: int, edit_message: bool = False,
-                          exclude_id: int = None, is_replace: bool = False, lang: str = 'ru'):
+                          exclude_id: int = None, is_replace: bool = False, lang: str = 'ru',
+                          state: FSMContext | None = None):
     proxy = await get_best_proxy(user_id, exclude_id, is_replace)
 
     if not proxy:
@@ -69,21 +73,24 @@ async def send_best_proxy(message: types.Message, bot: Bot, user_id: int, edit_m
         likes=proxy.likes,
         dislikes=proxy.dislikes,
         bot_username=bot_info.username,
-        show_replace=True,
         lang=lang
     )
 
     if edit_message:
         try:
-            await message.edit_text(text, reply_markup=markup, disable_web_page_preview=True)
+            sent = await message.edit_text(text, reply_markup=markup, disable_web_page_preview=True)
         except Exception:
-            await message.answer(text, reply_markup=markup, disable_web_page_preview=True)
+            sent = await message.answer(text, reply_markup=markup, disable_web_page_preview=True)
     else:
-        await message.answer(text, reply_markup=markup, disable_web_page_preview=True)
+        sent = await message.answer(text, reply_markup=markup, disable_web_page_preview=True)
+
+    # Запоминаем ID карточки для последующей "замены" по кнопке "🔄 Другой прокси"
+    if state is not None and hasattr(sent, 'message_id'):
+        await state.update_data(last_proxy_msg_id=sent.message_id)
 
 
 @router.callback_query(F.data.startswith("replace_proxy_"))
-async def replace_proxy_handler(callback: types.CallbackQuery, bot: Bot, lang: str):
+async def replace_proxy_handler(callback: types.CallbackQuery, bot: Bot, lang: str, state: FSMContext):
     proxy_id = int(callback.data.split("_")[2])
 
     try:
@@ -103,7 +110,8 @@ async def replace_proxy_handler(callback: types.CallbackQuery, bot: Bot, lang: s
         edit_message=False,
         exclude_id=proxy_id,
         is_replace=True,
-        lang=lang
+        lang=lang,
+        state=state
     )
     await callback.answer()
 
@@ -123,7 +131,6 @@ async def send_specific_proxy(message: types.Message, proxy_id: int, bot: Bot, l
         likes=proxy.likes,
         dislikes=proxy.dislikes,
         bot_username=bot_info.username,
-        show_replace=False,
         lang=lang
     )
     await message.answer(text, reply_markup=markup, disable_web_page_preview=True)
@@ -154,7 +161,6 @@ async def handle_vote(callback: types.CallbackQuery, bot: Bot, lang: str):
         likes=proxy.likes,
         dislikes=proxy.dislikes,
         bot_username=bot_info.username,
-        show_replace=True,
         lang=lang
     )
 
@@ -163,3 +169,64 @@ async def handle_vote(callback: types.CallbackQuery, bot: Bot, lang: str):
     except Exception as e:
         print(f"Ошибка при обновлении интерфейса лайка: {e}")
 
+
+@router.message(F.text.in_(all_values('btn_other_proxy')))
+async def other_proxy_text_handler(message: types.Message, bot: Bot, lang: str, state: FSMContext):
+    # Текстовая reply-кнопка "🔄 Другой прокси"
+    # Проверяем обязательные подписки так же, как в get_proxy_handler
+    channels = await get_all_channels()
+    unsubscribed = await get_unsubscribed_channels(bot, message.from_user.id, channels)
+    if unsubscribed:
+        await message.answer(
+            t('proxy_subscribe_required', lang),
+            reply_markup=get_subscription_keyboard(unsubscribed, lang)
+        )
+        return
+
+    # 1) Удаляем сообщение-тап юзера ("🔄 Другой прокси"), чтобы чат не засорялся
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    # 2) Удаляем старую карточку прокси (если знаем её ID)
+    data = await state.get_data()
+    last_msg_id = data.get('last_proxy_msg_id')
+    if last_msg_id:
+        try:
+            await bot.delete_message(chat_id=message.chat.id, message_id=last_msg_id)
+        except Exception:
+            pass
+
+    # 3) Кратковременная 👍-анимация, как в старом replace_proxy_handler
+    try:
+        emoji = await bot.send_message(
+            chat_id=message.chat.id,
+            text="<tg-emoji emoji-id='5388953246486269495'>👍</tg-emoji>"
+        )
+        await asyncio.sleep(0.1)
+        await emoji.delete()
+    except Exception:
+        pass
+
+    # 4) Отправляем новую карточку и запоминаем её ID
+    await send_best_proxy(
+        message=message,
+        bot=bot,
+        user_id=message.from_user.id,
+        is_replace=True,
+        lang=lang,
+        state=state
+    )
+
+
+@router.message(F.text.in_(all_values('btn_main_menu')))
+async def main_menu_text_handler(message: types.Message, lang: str):
+    # Текстовая reply-кнопка "🔝 Главное меню"
+    await message.answer("🏠", reply_markup=main_keyboard(lang))
+
+
+
+@router.callback_query(F.data.startswith("no_connect_"))
+async def no_connect_handler(callback: types.CallbackQuery, lang: str):
+    await callback.answer(t('proxy_tips_alert', lang), show_alert=True)

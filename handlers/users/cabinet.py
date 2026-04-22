@@ -352,8 +352,9 @@ async def manage_sponsor_handler(callback: types.CallbackQuery, lang: str):
              until=proxy.sponsor_until.strftime('%d.%m.%Y %H:%M'))
 
     markup = InlineKeyboardBuilder()
-    markup.row(types.InlineKeyboardButton(text=t('btn_unlink_channel', lang), callback_data=f"unlink_sponsor_{proxy_id}"))
-    markup.row(types.InlineKeyboardButton(text=t('btn_back_to_proxy', lang), callback_data=f"proxy_manage_{proxy_id}"))
+    markup.row(
+        types.InlineKeyboardButton(text="🗑 Отвязать канал", callback_data=f"unlink_sponsor_{proxy_id}", style="danger"))
+    markup.row(types.InlineKeyboardButton(text="🔙 Назад к прокси", callback_data=f"proxy_manage_{proxy_id}"))
 
     await callback.message.edit_text(text, reply_markup=markup.as_markup(), disable_web_page_preview=True)
 
